@@ -203,4 +203,293 @@
       }
     } catch (e) {}
   }
+
+  // ============================================================================
+  // 6. 上下文 85% 自动压缩防卡死守卫（Auto-Compact Guard + 底部胶囊一键压缩按钮）
+  // ============================================================================
+  const AUTO_COMPACT_KEY = 'ag-auto-compact-enabled';
+  const AUTO_COMPACT_THRESHOLD_KEY = 'ag-auto-compact-threshold';
+  const COMPACT_PROMPT = '/compact 只保留当前任务目标、核心改动文件路径、关键结论与下一步待办';
+  const compactCooldownMap = window.__ag_compact_cooldown || (window.__ag_compact_cooldown = new Map());
+  let pendingCompactTimer = null;
+
+  function isAutoCompactEnabled() {
+    try {
+      const v = localStorage.getItem(AUTO_COMPACT_KEY);
+      return v === null ? true : v !== 'false';
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function setAutoCompactEnabled(val) {
+    try {
+      localStorage.setItem(AUTO_COMPACT_KEY, val ? 'true' : 'false');
+    } catch (e) {}
+  }
+
+  function getAutoCompactThreshold() {
+    try {
+      const n = parseInt(localStorage.getItem(AUTO_COMPACT_THRESHOLD_KEY) || '85', 10);
+      return Number.isFinite(n) && n >= 50 && n <= 98 ? n : 85;
+    } catch (e) {
+      return 85;
+    }
+  }
+
+  function showCompactToast(msg, isWarn = false) {
+    try {
+      let toast = document.getElementById('ag-compact-toast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'ag-compact-toast';
+        document.body.appendChild(toast);
+      }
+      toast.textContent = msg;
+      toast.setAttribute('data-warn', isWarn ? '1' : '0');
+      toast.setAttribute('data-show', '1');
+      if (window.__ag_toast_timer) clearTimeout(window.__ag_toast_timer);
+      window.__ag_toast_timer = setTimeout(() => {
+        if (toast) toast.removeAttribute('data-show');
+      }, 4200);
+    } catch (e) {}
+  }
+
+  function isAgentBusy() {
+    const box = document.getElementById('antigravity.agentSidePanelInputBox');
+    if (document.querySelector('[data-testid="status-loading-spinner"]')) return true;
+    if (box && box.querySelector('[data-testid="stop-button"], [aria-label*="Stop"], [aria-label*="停止"]')) {
+      return true;
+    }
+    return false;
+  }
+
+  function getComposerEditor() {
+    const box = document.getElementById('antigravity.agentSidePanelInputBox');
+    if (!box) return null;
+    return (
+      box.querySelector('[contenteditable="true"]') ||
+      box.querySelector('textarea') ||
+      null
+    );
+  }
+
+  function getEditorText(editor) {
+    if (!editor) return '';
+    if (editor.tagName === 'TEXTAREA' || editor.tagName === 'INPUT') {
+      return (editor.value || '').trim();
+    }
+    return (editor.textContent || '').trim();
+  }
+
+  function setEditorTextAndFire(editor, text) {
+    editor.focus();
+    if (editor.tagName === 'TEXTAREA' || editor.tagName === 'INPUT') {
+      const proto = editor.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+      const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (nativeSetter) {
+        nativeSetter.call(editor, text);
+      } else {
+        editor.value = text;
+      }
+      editor.dispatchEvent(new Event('input', { bubbles: true }));
+      editor.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+
+    // 针对 Lexical / ProseMirror / TipTap 富文本编辑器：先全选清空，再通过 execCommand / InputEvent 注入
+    try {
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand('delete', false, null);
+    } catch (e) {}
+
+    let inserted = false;
+    try {
+      inserted = document.execCommand('insertText', false, text);
+    } catch (e) {}
+
+    if (!inserted || !getEditorText(editor)) {
+      try {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', text);
+        editor.dispatchEvent(
+          new ClipboardEvent('paste', {
+            clipboardData: dt,
+            bubbles: true,
+            cancelable: true
+          })
+        );
+      } catch (e) {}
+    }
+
+    if (!getEditorText(editor)) {
+      editor.textContent = text;
+      editor.dispatchEvent(new InputEvent('input', { data: text, inputType: 'insertText', bubbles: true }));
+    }
+  }
+
+  function executeSlashCompact(isManual = false) {
+    const box = document.getElementById('antigravity.agentSidePanelInputBox');
+    const editor = getComposerEditor();
+    if (!box || !editor) {
+      if (isManual) showCompactToast('⚠️ 未找到聊天输入框，请进入对话页面后再试', true);
+      return false;
+    }
+    if (isAgentBusy()) {
+      if (isManual) showCompactToast('⏳ Agent 正在运行中，请等待当前回答结束后再压缩', true);
+      return false;
+    }
+    const existingText = getEditorText(editor);
+    if (!isManual && existingText.length > 0) {
+      // 用户输入框内有草稿时不覆盖
+      return false;
+    }
+
+    showCompactToast(
+      isManual
+        ? '⚡ 正在执行 /compact 压缩当前会话上下文...'
+        : `⚡ 上下文已达 ${getAutoCompactThreshold()}% 警戒线，正在自动执行 /compact 防卡死...`,
+      false
+    );
+
+    // 第一步：先输入 /compact 唤起斜杠菜单
+    setEditorTextAndFire(editor, '/compact');
+
+    setTimeout(() => {
+      // 检查是否弹出了斜杠指令候选列表（若有则选中或补全完整指令后发送）
+      const menuOption = Array.from(
+        document.querySelectorAll('[role="option"], [cmdk-item], [data-testid*="slash"], [data-testid*="command"]')
+      ).find((el) => (el.textContent || '').includes('/compact'));
+
+      if (menuOption) {
+        try {
+          menuOption.click();
+        } catch (e) {}
+      }
+
+      setTimeout(() => {
+        const curText = getEditorText(editor);
+        if (!curText || curText === '/compact') {
+          setEditorTextAndFire(editor, COMPACT_PROMPT);
+        }
+        setTimeout(() => {
+          const sendBtn = box.querySelector('[data-testid="send-button"]');
+          if (sendBtn && !sendBtn.disabled) {
+            sendBtn.click();
+          } else {
+            editor.dispatchEvent(
+              new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                bubbles: true,
+                cancelable: true
+              })
+            );
+          }
+        }, 90);
+      }, 110);
+    }, 140);
+
+    return true;
+  }
+
+  window.__ag_trigger_compact = () => executeSlashCompact(true);
+
+  function parseCtxPctFromPayload(payload) {
+    if (!payload || typeof payload.inlineHtml !== 'string') return 0;
+    const m = payload.inlineHtml.match(/\((\d+)%\)/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  function updateAutoCompactBadge(payload) {
+    const pill = document.getElementById('ag-live-metrics-pill');
+    if (!pill) return;
+    let btn = document.getElementById('ag-auto-compact-btn');
+    if (!btn) {
+      btn = document.createElement('span');
+      btn.id = 'ag-auto-compact-btn';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        executeSlashCompact(true);
+      });
+      btn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const nextState = !isAutoCompactEnabled();
+        setAutoCompactEnabled(nextState);
+        updateAutoCompactBadge(window.__ag_last_metrics);
+        showCompactToast(
+          nextState
+            ? `✅ 已开启 ${getAutoCompactThreshold()}% 自动压缩上下文守卫`
+            : '⏸️ 已关闭自动压缩守卫（仍可左键点击手动压缩）',
+          !nextState
+        );
+      });
+      pill.appendChild(btn);
+    }
+
+    const enabled = isAutoCompactEnabled();
+    const threshold = getAutoCompactThreshold();
+    const pct = parseCtxPctFromPayload(payload);
+    btn.setAttribute('data-enabled', enabled ? '1' : '0');
+    btn.setAttribute('data-high', pct >= threshold ? '2' : pct >= threshold - 10 ? '1' : '0');
+    btn.textContent = enabled ? `⚡${threshold}%自动` : '⚡自动:关';
+    btn.title = `当前上下文水位：${pct}%（自动压缩阈值：${threshold}%）\n• 左键点击：立即发送 /compact 精简上下文\n• 右键点击：开启 / 关闭 ${threshold}% 自动压缩`;
+
+    // 判断是否需要自动触发 /compact
+    if (!enabled || !payload || !payload.hasData || !payload.cascadeId) return;
+    if (pct < threshold) return;
+
+    const now = Date.now();
+    const lastRecord = compactCooldownMap.get(payload.cascadeId);
+    // 同一会话 180 秒内或同一数据签名不重复触发
+    if (lastRecord && (now - lastRecord.ts < 180000 || lastRecord.sig === payload.sig)) {
+      return;
+    }
+
+    if (pendingCompactTimer) clearTimeout(pendingCompactTimer);
+    pendingCompactTimer = setTimeout(() => {
+      pendingCompactTimer = null;
+      if (!isAutoCompactEnabled()) return;
+      if (isAgentBusy()) return;
+      const editor = getComposerEditor();
+      if (!editor || getEditorText(editor).length > 0 || document.activeElement === editor) return;
+
+      const latestPayload = window.__ag_last_metrics;
+      if (!latestPayload || latestPayload.cascadeId !== payload.cascadeId) return;
+      const latestPct = parseCtxPctFromPayload(latestPayload);
+      if (latestPct < getAutoCompactThreshold()) return;
+
+      compactCooldownMap.set(payload.cascadeId, { ts: Date.now(), sig: latestPayload.sig });
+      executeSlashCompact(false);
+    }, 1800);
+  }
+
+  if (typeof window.__ag_render_metrics === 'function' && !window.__ag_orig_render_metrics_v1) {
+    window.__ag_orig_render_metrics_v1 = window.__ag_render_metrics;
+  }
+  if (window.__ag_orig_render_metrics_v1) {
+    window.__ag_render_metrics = function (payload) {
+      window.__ag_orig_render_metrics_v1(payload);
+      try {
+        updateAutoCompactBadge(payload);
+      } catch (e) {}
+    };
+    window.__ag_update_live_metrics = window.__ag_render_metrics;
+  }
+  try {
+    updateAutoCompactBadge(window.__ag_last_metrics || null);
+  } catch (e) {}
+  setTimeout(() => {
+    try {
+      updateAutoCompactBadge(window.__ag_last_metrics || null);
+    } catch (e) {}
+  }, 600);
 })();

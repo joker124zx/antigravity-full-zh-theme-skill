@@ -193,3 +193,81 @@ aside button {
   font-weight: 700 !important;
   font-variant-numeric: lining-nums !important;
 }
+
+/* 6. 85% 自动压缩防卡死胶囊按钮 (#ag-auto-compact-btn) 与状态横幅 (#ag-compact-toast) */
+#ag-live-metrics-pill #ag-live-metrics-text {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  min-width: 0 !important;
+  flex: 0 1 auto !important;
+}
+
+#ag-auto-compact-btn {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0 !important;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+  background: rgba(180, 83, 9, 0.1);
+  border: 1px solid rgba(180, 83, 9, 0.28);
+  color: #92400E;
+}
+
+#ag-auto-compact-btn:hover {
+  background: rgba(180, 83, 9, 0.2);
+  border-color: rgba(180, 83, 9, 0.55);
+  color: #78350F;
+}
+
+#ag-auto-compact-btn[data-enabled="0"] {
+  background: rgba(120, 113, 108, 0.1);
+  border-color: rgba(120, 113, 108, 0.25);
+  color: #78716C;
+}
+
+#ag-auto-compact-btn[data-high="1"] {
+  background: rgba(217, 119, 6, 0.18);
+  border-color: rgba(217, 119, 6, 0.55);
+  color: #B45309;
+}
+
+#ag-auto-compact-btn[data-high="2"] {
+  background: rgba(220, 38, 38, 0.16);
+  border-color: rgba(220, 38, 38, 0.55);
+  color: #B91C1C;
+}
+
+#ag-compact-toast {
+  position: fixed;
+  bottom: 84px;
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  z-index: 99999;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: #292524;
+  color: #FAF8F5;
+  border: 1px solid rgba(217, 119, 87, 0.45);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#ag-compact-toast[data-warn="1"] {
+  border-color: rgba(234, 179, 8, 0.6);
+}
+
+#ag-compact-toast[data-show="1"] {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
