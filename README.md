@@ -14,9 +14,9 @@
 > [!IMPORTANT]
 > **开源致谢与演进声明 (Credits & Attribution)**
 >
-> 本项目基于 [**@Anarcadia (传伴)**](https://github.com/Anarcadia)（X/Twitter: [**@Arcadia_Bao**](https://x.com/Arcadia_Bao)）开源的 [**`chuanban-antigravity-theme-patch` (v5.0.0)**](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) 进行深度扩展与二次封装。
+> 本项目基于 [**@Anarcadia (忒修斯的船板)**](https://github.com/Anarcadia)（X/Twitter: [**@Arcadia_Bao**](https://x.com/Arcadia_Bao)）开源的 [**`chuanban-antigravity-theme-patch` (v5.0.0)**](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) 进行深度扩展与二次封装。
 > - **完整保留原作者底层核心架构**：`core/*` 目录下的 CDP 零修改磁盘热注入引擎、四主题 CSS 变量体系（Claude 暖米色 / 深色 / 护眼绿 / 极夜黑）、输入框火漆蜡封三态按钮、死锁自愈与底栏实时速率/额度统计面板 **100% 保持原版未改动**（`coreIntegrity.clean: true`）。
-> - **全方位扩展在 `user/*` 用户层与 `SKILL.md` 技能层完成**：词条规模从原版 573 条扩展至 **2,201 条全域词典**，攻克了 Windows 原生系统级右键菜单（`showContextMenu` IPC）与会话三点菜单（`⋮`）无法被 DOM 观察器汉化的难题；将原版死板的 **2×2 四个灰点运行图标升级为 Claude 陶土暖橙动态旋转光环 + 中心呼吸圆点**；新增 **朱砂暖砖红重点字 (`#B43E18`) + 等高数字 (`lining-nums`)**、**五色高辨识度代码文件胶囊**、**四维长对话极速防卡顿优化** 及 **Agent Skill 自动化维护能力**。在此向原作者 **@Anarcadia (@Arcadia_Bao)** 致以诚挚谢意！
+> - **全方位扩展在 `user/*` 用户层与 `SKILL.md` 技能层完成**：词条规模从原版 573 条扩展至 **2,201 条全域词典**，攻克了 Windows 原生系统级右键菜单（`showContextMenu` IPC）与会话三点菜单（`⋮`）无法被 DOM 观察器汉化的难题；将原版死板的 **2×2 四个灰点运行图标升级为 Claude 陶土暖橙动态旋转光环 + 中心呼吸圆点**；新增 **朱砂暖砖红重点字 (`#B43E18`) + 等高数字 (`lining-nums`)**、**五色高辨识度代码文件胶囊**、**四维长对话极速防卡顿优化** 及 **Agent Skill 自动化维护能力**。在此向原作者 **忒修斯的船板 (@Arcadia_Bao / @Anarcadia)** 致以诚挚谢意！
 
 ---
 
@@ -155,6 +155,6 @@ antigravity-full-zh-theme-skill/
 
 ## 六、致谢与开源协议 (Credits & License)
 
-- **上游基础项目**：[**Anarcadia/chuanban-antigravity-theme-patch**](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) — 感谢 **@Anarcadia (传伴)**（X/Twitter: [**@Arcadia_Bao**](https://x.com/Arcadia_Bao)）设计的无侵入式 CDP 注入架构、四套精美主题配色、火漆蜡封按钮与双通道统计面板。
+- **上游基础项目**：[**Anarcadia/chuanban-antigravity-theme-patch**](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) — 感谢 **忒修斯的船板 (@Anarcadia)**（X/Twitter: [**@Arcadia_Bao**](https://x.com/Arcadia_Bao)）设计的无侵入式 CDP 注入架构、四套精美主题配色、火漆蜡封按钮与双通道统计面板。
 - **全域汉化与视觉/性能扩展**：[**@joker124zx**](https://github.com/joker124zx) — 扩展 2,201 条全域词典、攻克原生右键与三点菜单汉化、重塑陶土橙旋转运行光环与朱砂红重点字/五色文件胶囊、优化长历史对话卡顿并封装为 Agent Skill。
 - **开源协议**：本项目遵循 [MIT License](LICENSE) 开源协议。
