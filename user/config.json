@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "channel": "stable",
+  "preset": "high-contrast",
+  "contextLimit": 256000,
+  "modules": {
+    "i18n": true,
+    "metrics": true,
+    "composerWaxSeal": true,
+    "deadlockHealer": true,
+    "customCss": true,
+    "customJs": true
+  },
+  "themeVars": {},
+  "selectors": {
+    "inputBoxId": "antigravity.agentSidePanelInputBox",
+    "branchPillInBox": "#antigravity\\.agentSidePanelInputBox [data-testid=\"branch-pill-trigger\"], [id=\"antigravity.agentSidePanelInputBox\"] [data-testid=\"branch-pill-trigger\"], #antigravity\\.agentSidePanelInputBox [aria-label^=\"Select project\"], [id=\"antigravity.agentSidePanelInputBox\"] [aria-label^=\"Select project\"], #antigravity\\.agentSidePanelInputBox [aria-label^=\"选择项目\"], [id=\"antigravity.agentSidePanelInputBox\"] [aria-label^=\"选择项目\"]",
+    "homeGreeting": "[data-testid=\"home-greeting\"]",
+    "excludeI18n": "code, pre, kbd, samp, textarea, input, style, script, noscript, svg, [contenteditable=\"true\"], .prose, .markdown, [class*=\"chat-message\"], [data-testid=\"planner-response-text\"], [data-testid=\"user-message-content\"], [data-testid=\"conversation-navigator\"], .monaco-editor, .xterm, [class*=\"group/file-title\"], #ag-live-metrics-pill, #ag-live-metrics-tooltip"
+  }
+}

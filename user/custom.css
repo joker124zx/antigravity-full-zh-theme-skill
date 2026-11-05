@@ -1,0 +1,195 @@
+/* ============================================================================
+ * user/custom.css — 渲染提速、文件胶囊高亮与自定义状态图标层
+ * ============================================================================ */
+
+/* 1. 性能提速：关闭 65MB 超大字体在侧边栏高频悬停/滚动时的 HarfBuzz 复杂字距重算，并启用局部布局隔离 */
+.bg-sidebar a,
+.bg-sidebar button,
+.bg-sidebar [class*="truncate"],
+.bg-sidebar [class*="text-sm"],
+.bg-sidebar [class*="text-xs"],
+aside a,
+aside button {
+  text-rendering: auto !important;
+}
+
+[data-testid="conversation-row-sidebar"] {
+  contain: layout style;
+}
+
+/* 1.5 历史长对话虚拟滚动加速：对屏幕可视区外的历史问答轮次跳过排版与绘制（类似 ChatGPT 的懒渲染机制） */
+[data-testid="autoscroll-viewport"] .scroll-mt-4 {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+
+[data-testid="autoscroll-viewport"] pre {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 140px;
+}
+
+/* 2. 将原版四个灰点 (2x2 grid) 的「正在运行」图标升级为 Claude 陶土暖橙动态旋转光环 + 中心呼吸核 */
+[data-testid="status-loading-spinner"] {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  opacity: 1 !important;
+}
+
+[data-testid="status-loading-spinner"] > [data-agent-state-dot] {
+  display: none !important;
+  animation: none !important;
+}
+
+[data-testid="status-loading-spinner"]::after {
+  content: "";
+  box-sizing: border-box;
+  width: 13px;
+  height: 13px;
+  border-radius: 9999px;
+  border: 1.75px solid rgba(217, 119, 87, 0.22);
+  border-top-color: #D97757;
+  border-right-color: #D97757;
+  will-change: transform;
+  animation: ag-claude-spinner-rotate 0.78s linear infinite;
+}
+
+[data-testid="status-loading-spinner"]::before {
+  content: "";
+  position: absolute;
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 9999px;
+  background-color: #D97757;
+  opacity: 0.85;
+}
+
+@keyframes ag-claude-spinner-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* 3. 对话正文中的可点击文件胶囊 (.inline-pill)：解决默认无背景、无边框、与正文混在一起不明显的问题 */
+.inline-pill,
+[data-quotable-inline="true"].inline-pill {
+  font-family: var(--font-mono) !important;
+  font-size: 0.88em !important;
+  font-weight: 500 !important;
+  padding: 1.5px 6px !important;
+  margin: 0 1.5px !important;
+  border-radius: 5px !important;
+  background-color: #F3ECE1 !important;
+  border: 1px solid rgba(180, 83, 9, 0.32) !important;
+  color: #7C2D12 !important;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04) !important;
+  text-decoration: none !important;
+}
+
+.inline-pill span,
+[data-quotable-inline="true"].inline-pill span {
+  font-family: var(--font-mono) !important;
+  color: inherit !important;
+}
+
+.inline-pill:hover,
+[data-quotable-inline="true"].inline-pill:hover {
+  background-color: #EAE0D0 !important;
+  border-color: rgba(180, 83, 9, 0.55) !important;
+  color: #431407 !important;
+}
+
+/* 3.1 按文件后缀赋予高辨识度专属色彩标签（.js/.mjs 琥珀金、.json 暖橙、.css 靛蓝、.ts 蔚蓝、.md 翠绿） */
+.inline-pill[data-uri$=".js"],
+.inline-pill[data-uri$=".mjs"],
+.inline-pill[data-uri$=".cjs"],
+.inline-pill[data-uri*=".js#"],
+.inline-pill[data-uri*=".mjs#"] {
+  background-color: #FEF3C7 !important;
+  border-color: rgba(217, 119, 6, 0.48) !important;
+  color: #92400E !important;
+}
+
+.inline-pill[data-uri$=".js"]:hover,
+.inline-pill[data-uri$=".mjs"]:hover,
+.inline-pill[data-uri$=".cjs"]:hover,
+.inline-pill[data-uri*=".js#"]:hover,
+.inline-pill[data-uri*=".mjs#"]:hover {
+  background-color: #FDE68A !important;
+  border-color: rgba(180, 83, 9, 0.7) !important;
+  color: #78350F !important;
+}
+
+.inline-pill[data-uri$=".json"],
+.inline-pill[data-uri*=".json#"] {
+  background-color: #FFEDD5 !important;
+  border-color: rgba(234, 88, 12, 0.42) !important;
+  color: #9A3412 !important;
+}
+
+.inline-pill[data-uri$=".json"]:hover,
+.inline-pill[data-uri*=".json#"]:hover {
+  background-color: #FED7AA !important;
+  border-color: rgba(194, 65, 12, 0.65) !important;
+  color: #7C2D12 !important;
+}
+
+.inline-pill[data-uri$=".css"],
+.inline-pill[data-uri*=".css#"] {
+  background-color: #E0E7FF !important;
+  border-color: rgba(79, 70, 229, 0.38) !important;
+  color: #3730A3 !important;
+}
+
+.inline-pill[data-uri$=".css"]:hover,
+.inline-pill[data-uri*=".css#"]:hover {
+  background-color: #C7D2FE !important;
+  border-color: rgba(67, 56, 202, 0.6) !important;
+  color: #312E81 !important;
+}
+
+.inline-pill[data-uri$=".ts"],
+.inline-pill[data-uri$=".tsx"],
+.inline-pill[data-uri*=".ts#"],
+.inline-pill[data-uri*=".tsx#"] {
+  background-color: #E0F2FE !important;
+  border-color: rgba(2, 132, 199, 0.4) !important;
+  color: #075985 !important;
+}
+
+.inline-pill[data-uri$=".md"],
+.inline-pill[data-uri*=".md#"] {
+  background-color: #ECFDF5 !important;
+  border-color: rgba(5, 150, 105, 0.38) !important;
+  color: #065F46 !important;
+}
+
+/* 4. 行内代码段 (:not(pre) > code) 强化对比度：温润羊皮纸底 + 清晰边框 + 深陶土红代码色 */
+[data-testid="planner-response-text"] :not(pre) > code,
+.select-text :not(pre) > code {
+  background-color: #F3ECE2 !important;
+  border: 1px solid rgba(116, 34, 26, 0.2) !important;
+  color: #882218 !important;
+  font-weight: 500 !important;
+  padding: 1.5px 5.5px !important;
+  border-radius: 4px !important;
+}
+
+/* 5. 正文重点字 (strong / b) 专属高亮配色 + 修复古典衬线数字 (57,793) 高低错位问题 */
+[data-testid="planner-response-text"],
+.select-text {
+  font-variant-numeric: lining-nums !important;
+}
+
+[data-testid="planner-response-text"] strong,
+[data-testid="planner-response-text"] b,
+.select-text strong,
+.select-text b {
+  color: #B43E18 !important;
+  font-weight: 700 !important;
+  font-variant-numeric: lining-nums !important;
+}
