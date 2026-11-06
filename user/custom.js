@@ -209,9 +209,16 @@
   // ============================================================================
   const AUTO_COMPACT_KEY = 'ag-auto-compact-enabled';
   const AUTO_COMPACT_THRESHOLD_KEY = 'ag-auto-compact-threshold';
-  const COMPACT_PROMPT = '/compact 只保留当前任务目标、核心改动文件路径、关键结论与下一步待办';
+  const COMPACT_COMMAND = '/compact';
   const compactCooldownMap = window.__ag_compact_cooldown || (window.__ag_compact_cooldown = new Map());
-  let pendingCompactTimer = null;
+  if (window.__ag_pending_compact_timer) {
+    clearTimeout(window.__ag_pending_compact_timer);
+    window.__ag_pending_compact_timer = null;
+  }
+  const existingCompactBtn = document.getElementById('ag-auto-compact-btn');
+  if (existingCompactBtn) {
+    existingCompactBtn.remove();
+  }
 
   function isAutoCompactEnabled() {
     try {
@@ -297,7 +304,7 @@
       return;
     }
 
-    // 针对 Lexical / ProseMirror / TipTap 富文本编辑器：先全选清空，再通过 execCommand / InputEvent 注入
+    // 针对 Lexical 富文本编辑器：先全选清空，再仅通过单一通道（execCommand insertText）写入一次，严禁同步重复触发 paste
     try {
       const sel = window.getSelection();
       const range = document.createRange();
@@ -307,12 +314,14 @@
       document.execCommand('delete', false, null);
     } catch (e) {}
 
-    let inserted = false;
+    let execOk = false;
     try {
-      inserted = document.execCommand('insertText', false, text);
-    } catch (e) {}
+      execOk = document.execCommand('insertText', false, text);
+    } catch (e) {
+      execOk = false;
+    }
 
-    if (!inserted || !getEditorText(editor)) {
+    if (!execOk) {
       try {
         const dt = new DataTransfer();
         dt.setData('text/plain', text);
@@ -325,14 +334,10 @@
         );
       } catch (e) {}
     }
-
-    if (!getEditorText(editor)) {
-      editor.textContent = text;
-      editor.dispatchEvent(new InputEvent('input', { data: text, inputType: 'insertText', bubbles: true }));
-    }
   }
 
   function executeSlashCompact(isManual = false) {
+    if (window.__ag_compact_in_flight) return false;
     const box = document.getElementById('antigravity.agentSidePanelInputBox');
     const editor = getComposerEditor();
     if (!box || !editor) {
@@ -349,6 +354,11 @@
       return false;
     }
 
+    window.__ag_compact_in_flight = true;
+    setTimeout(() => {
+      window.__ag_compact_in_flight = false;
+    }, 3000);
+
     showCompactToast(
       isManual
         ? '⚡ 正在执行 /compact 压缩当前会话上下文...'
@@ -356,45 +366,27 @@
       false
     );
 
-    // 第一步：先输入 /compact 唤起斜杠菜单
-    setEditorTextAndFire(editor, '/compact');
+    // 仅单独写入一次纯 /compact（严禁二次写入或附加后缀，确保系统识别为原生斜杠指令）
+    setEditorTextAndFire(editor, COMPACT_COMMAND);
 
     setTimeout(() => {
-      // 检查是否弹出了斜杠指令候选列表（若有则选中或补全完整指令后发送）
-      const menuOption = Array.from(
-        document.querySelectorAll('[role="option"], [cmdk-item], [data-testid*="slash"], [data-testid*="command"]')
-      ).find((el) => (el.textContent || '').includes('/compact'));
-
-      if (menuOption) {
-        try {
-          menuOption.click();
-        } catch (e) {}
+      // 异步校验：若 100ms 后出现了斜杠候选菜单且光标仍在其中，按需回车提交单条 /compact
+      const sendBtn = box.querySelector('[data-testid="send-button"]');
+      if (sendBtn && !sendBtn.disabled) {
+        sendBtn.click();
+      } else {
+        editor.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+          })
+        );
       }
-
-      setTimeout(() => {
-        const curText = getEditorText(editor);
-        if (!curText || curText === '/compact') {
-          setEditorTextAndFire(editor, COMPACT_PROMPT);
-        }
-        setTimeout(() => {
-          const sendBtn = box.querySelector('[data-testid="send-button"]');
-          if (sendBtn && !sendBtn.disabled) {
-            sendBtn.click();
-          } else {
-            editor.dispatchEvent(
-              new KeyboardEvent('keydown', {
-                key: 'Enter',
-                code: 'Enter',
-                keyCode: 13,
-                which: 13,
-                bubbles: true,
-                cancelable: true
-              })
-            );
-          }
-        }, 90);
-      }, 110);
-    }, 140);
+    }, 120);
 
     return true;
   }
@@ -414,26 +406,26 @@
     if (!btn) {
       btn = document.createElement('span');
       btn.id = 'ag-auto-compact-btn';
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        executeSlashCompact(true);
-      });
-      btn.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const nextState = !isAutoCompactEnabled();
-        setAutoCompactEnabled(nextState);
-        updateAutoCompactBadge(window.__ag_last_metrics);
-        showCompactToast(
-          nextState
-            ? `✅ 已开启 ${getAutoCompactThreshold()}% 自动压缩上下文守卫`
-            : '⏸️ 已关闭自动压缩守卫（仍可左键点击手动压缩）',
-          !nextState
-        );
-      });
       pill.appendChild(btn);
     }
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      executeSlashCompact(true);
+    };
+    btn.oncontextmenu = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const nextState = !isAutoCompactEnabled();
+      setAutoCompactEnabled(nextState);
+      updateAutoCompactBadge(window.__ag_last_metrics);
+      showCompactToast(
+        nextState
+          ? `✅ 已开启 ${getAutoCompactThreshold()}% 自动压缩上下文守卫`
+          : '⏸️ 已关闭自动压缩守卫（仍可左键点击手动压缩）',
+        !nextState
+      );
+    };
 
     const enabled = isAutoCompactEnabled();
     const threshold = getAutoCompactThreshold();
@@ -454,9 +446,9 @@
       return;
     }
 
-    if (pendingCompactTimer) clearTimeout(pendingCompactTimer);
-    pendingCompactTimer = setTimeout(() => {
-      pendingCompactTimer = null;
+    if (window.__ag_pending_compact_timer) clearTimeout(window.__ag_pending_compact_timer);
+    window.__ag_pending_compact_timer = setTimeout(() => {
+      window.__ag_pending_compact_timer = null;
       if (!isAutoCompactEnabled()) return;
       if (isAgentBusy()) return;
       const editor = getComposerEditor();
