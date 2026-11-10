@@ -234,6 +234,7 @@
 
   // 5. 当新建对话被后端自动生成英文标题时，若用户首条提问包含中文，自动将其重命名为中文标题（兼容 v2.31.0+ annotations.title 与旧版 updateOptimisticSummary）
   const RE_HAS_CJK = /[\u4e00-\u9fa5]/;
+  const RE_MIN_3_CJK = /(?:[\u4e00-\u9fa5].*){3,}/;
   const RE_PURE_EN_TITLE = /^[A-Za-z0-9\s\-_.,:()'"/&+#]+$/;
   const processedCids = window.__ag_auto_titled_cids_v2 || (window.__ag_auto_titled_cids_v2 = new Set());
 
@@ -243,16 +244,19 @@
       .replace(/https?:\/\/\S+/g, '')
       .replace(/[`*_#>~]/g, '')
       .trim();
-    const lines = cleaned
+    const clauses = cleaned
       .split(/[\r\n，。！？；、,!?;]+/)
-      .map((s) => s.trim())
+      .map((s) =>
+        s
+          .replace(/^(请问|帮我|请帮我|麻烦帮我|我想|能不能|可以帮我|帮我看一下|帮我看看)/, '')
+          .trim()
+      )
       .filter((s) => RE_HAS_CJK.test(s));
-    if (lines.length === 0) return '';
-    let topic = lines[0]
-      .replace(/^(请问|帮我|请帮我|麻烦帮我|我想|能不能|可以帮我|帮我看一下|帮我看看)/, '')
-      .trim();
-    if (!topic) topic = lines[0];
-    return topic.length > 18 ? topic.slice(0, 18) : topic;
+    if (clauses.length === 0) return '';
+    // 优先选取至少含 3 个汉字的有效主题短语，跳过 "好的"、"16:9的" 等过短附言
+    const meaningful = clauses.find((s) => RE_MIN_3_CJK.test(s)) || clauses[0];
+    if (!RE_MIN_3_CJK.test(meaningful)) return '';
+    return meaningful.length > 18 ? meaningful.slice(0, 18) : meaningful;
   }
 
   function autoLocalizeActiveConvTitle() {
