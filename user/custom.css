@@ -2,7 +2,7 @@
  * user/custom.css — 渲染提速、文件胶囊高亮与自定义状态图标层
  * ============================================================================ */
 
-/* 1. 性能提速：关闭 65MB 超大字体在侧边栏高频悬停/滚动时的 HarfBuzz 复杂字距重算，并启用局部布局隔离 */
+/* 1. 性能提速：关闭 791MB 超大字体 (Sarasa-SuperTTC.ttc) 在侧边栏与历史对话挂载时的 HarfBuzz 复杂字距重算，并精简无效字体回退链 */
 .bg-sidebar a,
 .bg-sidebar button,
 .bg-sidebar [class*="truncate"],
@@ -10,22 +10,35 @@
 .bg-sidebar [class*="text-xs"],
 aside a,
 aside button {
-  text-rendering: auto !important;
+  text-rendering: optimizeSpeed !important;
 }
 
 [data-testid="conversation-row-sidebar"] {
   contain: layout style;
 }
 
-/* 1.5 历史长对话虚拟滚动加速：对屏幕可视区外的历史问答轮次跳过排版与绘制（类似 ChatGPT 的懒渲染机制） */
-[data-testid="autoscroll-viewport"] .scroll-mt-4 {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 96px;
+/* 1.5 对话视口极速排版：跳过 6 个本机不存在的 WebFont 空探测，直接命中本机字体并关闭复杂连字重算（严禁对 .scroll-mt-4 启用 content-visibility: auto 以免与 autoscroll-viewport 的滚动到底部 ResizeObserver 产生高度震荡死循环） */
+[data-testid="autoscroll-viewport"] {
+  text-rendering: optimizeSpeed !important;
 }
 
+[data-testid="autoscroll-viewport"] .select-text,
+[data-testid="autoscroll-viewport"] .prose,
+[data-testid="autoscroll-viewport"] .markdown,
+[data-testid="autoscroll-viewport"] .select-text :is(p, li, blockquote, h1, h2, h3, h4, h5, h6, strong, em, span, div) {
+  font-family: Georgia, 'Sarasa Mono Slab SC', '等距更纱黑体 Slab SC', 'Microsoft YaHei', sans-serif;
+  text-rendering: optimizeSpeed;
+  font-kerning: none;
+}
+
+/* 1.6 v2.31.0 分栏渲染隔离：右侧产物预览器 (Artifact Viewer)、侧边栏与大型代码块独立布局边界，避免打字流式输出触发跨栏重排 */
+.bg-sidebar,
+aside,
+[aria-label="Artifact Viewer"],
+[aria-label="产物预览器"],
 [data-testid="autoscroll-viewport"] pre {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 140px;
+  contain: layout style;
+  overscroll-behavior: contain;
 }
 
 /* 2. 将原版四个灰点 (2x2 grid) 的「正在运行」图标升级为 Claude 陶土暖橙动态旋转光环 + 中心呼吸核 */

@@ -1,19 +1,28 @@
 /**
- * user/custom.js — 极速切换对话（SQLite 零抢占）、按需右键菜单汉化（平时 100% 原生 Array.map）与新会话自动中文标题守卫
+ * user/custom.js — 极速切换对话（SQLite 错峰读取 + 零 Observer 泄漏）、按需右键/三点菜单汉化（平时 100% 原生 Array.map）与新会话自动中文标题守卫
  */
 (() => {
-  // 1. 清理任何旧版残留定时器和额外 Observer，并屏蔽旧版 mousedown 误断开主 Observer 的闭包
+  // 1. 清理任何旧版残留定时器和额外 Observer，防止热更新时旧 MutationObserver 叠加泄漏
   if (window.__ag_custom_i18n_observer) {
     try {
       window.__ag_custom_i18n_observer.disconnect();
     } catch (e) {}
     window.__ag_custom_i18n_observer = null;
   }
+  if (window.__ag_prev_i18n_observer && window.__ag_prev_i18n_observer !== window.__ag_i18n_observer) {
+    try {
+      const realDisc = window.__ag_prev_i18n_observer.__realDisconnect || window.__ag_prev_i18n_observer.disconnect;
+      if (typeof realDisc === 'function') realDisc.call(window.__ag_prev_i18n_observer);
+    } catch (e) {}
+  }
   if (window.__ag_i18n_observer) {
-    window.__ag_i18n_observer.disconnect = function () {};
+    if (!window.__ag_i18n_observer.__realDisconnect) {
+      window.__ag_i18n_observer.__realDisconnect = window.__ag_i18n_observer.disconnect.bind(window.__ag_i18n_observer);
+    }
+    window.__ag_prev_i18n_observer = window.__ag_i18n_observer;
   }
 
-  // 2. 恢复 100% 原生 Array.prototype.map，仅在用户按下鼠标右键 (contextmenu) 的 60ms 窗口内按需拦截汉化菜单
+  // 2. 恢复 100% 原生 Array.prototype.map，仅在右键菜单 (contextmenu) 或点击「更多选项 (⋮)」按钮的 80ms 窗口内按需拦截汉化菜单
   if (window.__ag_orig_array_map) {
     Array.prototype.map = window.__ag_orig_array_map;
   } else {
@@ -36,6 +45,12 @@
     }
     if (trimmed.startsWith('Move to Group: ')) {
       return '移动到分组：' + trimmed.slice(15);
+    }
+    if (trimmed.startsWith('Close ')) {
+      return '关闭 ' + trimmed.slice(6);
+    }
+    if (trimmed.startsWith('Open in ')) {
+      return '在 ' + trimmed.slice(8) + ' 中打开';
     }
     return raw;
   }
@@ -79,13 +94,13 @@
     mapRestoreTimer = setTimeout(() => {
       Array.prototype.map = origArrayMap;
       mapRestoreTimer = null;
-    }, 120);
+    }, 80);
   }
 
   window.__ag_enable_temp_menu_hook = enableTempMenuMapHook;
 
-  if (!window.__ag_ctx_menu_hook_installed_v2) {
-    window.__ag_ctx_menu_hook_installed_v2 = true;
+  if (!window.__ag_ctx_menu_hook_installed_v3) {
+    window.__ag_ctx_menu_hook_installed_v3 = true;
     window.addEventListener(
       'contextmenu',
       () => {
@@ -93,29 +108,41 @@
       },
       true
     );
-    const onBtnTrigger = (e) => {
+    // 仅针对弹出式菜单按钮（⋮ 三点菜单、aria-haspopup="menu"）启用瞬时拦截，普通按钮与对话点击 100% 保持原生 Array.map
+    const onMenuBtnTrigger = (e) => {
       const t = e.target;
-      if (t && t.closest && t.closest('button, [role="button"], [data-testid*="more"], [aria-haspopup]')) {
+      if (
+        t &&
+        t.closest &&
+        t.closest('[data-testid="conversation-kebab"], [data-testid*="more"], [aria-haspopup="menu"], [aria-label="More options"], [aria-label="更多选项"]')
+      ) {
         if (typeof window.__ag_enable_temp_menu_hook === 'function') window.__ag_enable_temp_menu_hook();
       }
     };
-    window.addEventListener('pointerdown', onBtnTrigger, true);
-    window.addEventListener('mousedown', onBtnTrigger, true);
-    window.addEventListener('click', onBtnTrigger, true);
+    window.addEventListener('pointerdown', onMenuBtnTrigger, true);
   }
 
-  // 3. 切换历史对话时错峰读取 SQLite：推迟 400ms 再通知后台守护进程解析 .db 指标，避免与 Antigravity 主程序抢占磁盘 IO
+  // 3. 切换历史对话时大幅错峰读取 SQLite：推迟 1200ms 并配合 requestIdleCallback 再通知后台守护进程解析 .db 指标，彻底杜绝与 Antigravity 主程序抢占磁盘 IO
   if (typeof window.__agRequestMetrics === 'function' && !window.__ag_orig_req_metrics) {
     window.__ag_orig_req_metrics = window.__agRequestMetrics;
+  }
+  if (window.__ag_orig_req_metrics) {
     let metricsDebounceTimer = null;
     const deferredReq = (cid) => {
       if (metricsDebounceTimer) clearTimeout(metricsDebounceTimer);
       metricsDebounceTimer = setTimeout(() => {
         metricsDebounceTimer = null;
-        try {
-          window.__ag_orig_req_metrics(cid);
-        } catch (e) {}
-      }, 400);
+        const invoke = () => {
+          try {
+            window.__ag_orig_req_metrics(cid);
+          } catch (e) {}
+        };
+        if (typeof window.requestIdleCallback === 'function') {
+          window.requestIdleCallback(invoke, { timeout: 1000 });
+        } else {
+          invoke();
+        }
+      }, 1200);
     };
     try {
       window.__agRequestMetrics = deferredReq;
@@ -141,8 +168,74 @@
         window.__ag_check_route_fn();
       }
     }
-    autoLocalizeActiveConvTitle();
+    const runIdleTasks = () => {
+      autoLocalizeActiveConvTitle();
+      localizeDynamicChromeStrings();
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(runIdleTasks, { timeout: 1500 });
+    } else {
+      runIdleTasks();
+    }
   }, 3500);
+
+  // 4.5 轻量汉化 v2.31.0 外框动态文本（Updated HH:MM、Today HH:MM、Trajectory ID 与按钮无障碍提示，绝不扫描对话消息区）
+  const RE_UPDATED_AT = /^Updated\s+(.+)$/;
+  const RE_TODAY_TIME = /\(Today\s+([^)]+)\)/g;
+  const RE_YESTERDAY_TIME = /\(Yesterday\s+([^)]+)\)/g;
+  const RE_TRAJECTORY_ID = /^Trajectory ID:\s*(.+)$/;
+
+  function localizeDynamicChromeStrings() {
+    try {
+      const dict = window.__ag_i18n_dict || {};
+      // 1) 汉化顶栏/侧栏/标签栏/产物栏的动态时间戳文本节点（严格跳过聊天消息正文与编辑器）
+      const containers = document.querySelectorAll('header, aside, .bg-sidebar, [role="tablist"], [role="tab"], [aria-label="Artifact Viewer"], [aria-label="产物预览器"], [data-testid*="artifact"], footer');
+      for (let i = 0; i < containers.length; i++) {
+        const walker = document.createTreeWalker(containers[i], NodeFilter.SHOW_TEXT);
+        let tn;
+        while ((tn = walker.nextNode())) {
+          const raw = tn.nodeValue;
+          if (!raw || raw.length > 90) continue;
+          const s = raw.trim();
+          if (!s) continue;
+          let next = null;
+          if (dict[s]) {
+            next = raw.replace(s, dict[s]);
+          } else if (RE_UPDATED_AT.test(s)) {
+            next = raw.replace(RE_UPDATED_AT, '更新于 $1');
+          } else if (s.includes('(Today ')) {
+            next = raw.replace(RE_TODAY_TIME, '（今天 $1）');
+          } else if (s.includes('(Yesterday ')) {
+            next = raw.replace(RE_YESTERDAY_TIME, '（昨天 $1）');
+          } else if (RE_TRAJECTORY_ID.test(s)) {
+            next = raw.replace(RE_TRAJECTORY_ID, '轨迹 ID：$1');
+          }
+          if (next && next !== raw) {
+            tn.nodeValue = next;
+          }
+        }
+      }
+      // 2) 汉化外框按钮的 placeholder / title / aria-label 悬停提示
+      const attrEls = document.querySelectorAll('button[aria-label], button[title], input[placeholder]');
+      for (let j = 0; j < attrEls.length; j++) {
+        const el = attrEls[j];
+        if (el.closest('[data-testid="autoscroll-viewport"]')) continue;
+        for (const attr of ['placeholder', 'title', 'aria-label']) {
+          const val = el.getAttribute(attr);
+          if (!val) continue;
+          const trimmed = val.trim();
+          if (dict[trimmed]) {
+            el.setAttribute(attr, dict[trimmed]);
+          } else if (trimmed.startsWith('Select model, current: ')) {
+            el.setAttribute(attr, '选择模型（当前：' + trimmed.slice(23) + '）');
+          } else if (trimmed.startsWith('Close ')) {
+            el.setAttribute(attr, '关闭 ' + trimmed.slice(6).replace(RE_TODAY_TIME, '（今天 $1）'));
+          }
+        }
+      }
+    } catch (e) {}
+  }
+  setTimeout(localizeDynamicChromeStrings, 400);
 
   // 5. 当新建对话被后端自动生成英文标题时，若用户首条提问包含中文，自动将其重命名为中文标题
   const RE_HAS_CJK = /[\u4e00-\u9fa5]/;
@@ -304,7 +397,6 @@
       return;
     }
 
-    // 针对 Lexical 富文本编辑器：先全选清空，再仅通过单一通道（execCommand insertText）写入一次，严禁同步重复触发 paste
     try {
       const sel = window.getSelection();
       const range = document.createRange();
@@ -350,7 +442,6 @@
     }
     const existingText = getEditorText(editor);
     if (!isManual && existingText.length > 0) {
-      // 用户输入框内有草稿时不覆盖
       return false;
     }
 
@@ -366,11 +457,9 @@
       false
     );
 
-    // 仅单独写入一次纯 /compact（严禁二次写入或附加后缀，确保系统识别为原生斜杠指令）
     setEditorTextAndFire(editor, COMPACT_COMMAND);
 
     setTimeout(() => {
-      // 异步校验：若 100ms 后出现了斜杠候选菜单且光标仍在其中，按需回车提交单条 /compact
       const sendBtn = box.querySelector('[data-testid="send-button"]');
       if (sendBtn && !sendBtn.disabled) {
         sendBtn.click();
@@ -435,13 +524,11 @@
     btn.textContent = enabled ? `⚡${threshold}%自动` : '⚡自动:关';
     btn.title = `当前上下文水位：${pct}%（自动压缩阈值：${threshold}%）\n• 左键点击：立即发送 /compact 精简上下文\n• 右键点击：开启 / 关闭 ${threshold}% 自动压缩`;
 
-    // 判断是否需要自动触发 /compact
     if (!enabled || !payload || !payload.hasData || !payload.cascadeId) return;
     if (pct < threshold) return;
 
     const now = Date.now();
     const lastRecord = compactCooldownMap.get(payload.cascadeId);
-    // 同一会话 180 秒内或同一数据签名不重复触发
     if (lastRecord && (now - lastRecord.ts < 180000 || lastRecord.sig === payload.sig)) {
       return;
     }
