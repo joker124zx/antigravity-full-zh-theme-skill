@@ -232,10 +232,10 @@
   }
   setTimeout(localizeDynamicChromeStrings, 400);
 
-  // 5. 当新建对话被后端自动生成英文标题时，若用户首条提问包含中文，自动将其重命名为中文标题
+  // 5. 当新建对话被后端自动生成英文标题时，若用户首条提问包含中文，自动将其重命名为中文标题（兼容 v2.31.0+ annotations.title 与旧版 updateOptimisticSummary）
   const RE_HAS_CJK = /[\u4e00-\u9fa5]/;
   const RE_PURE_EN_TITLE = /^[A-Za-z0-9\s\-_.,:()'"/&+#]+$/;
-  const processedCids = window.__ag_auto_titled_cids || (window.__ag_auto_titled_cids = new Set());
+  const processedCids = window.__ag_auto_titled_cids_v2 || (window.__ag_auto_titled_cids_v2 = new Set());
 
   function extractChineseTopic(rawText) {
     if (!rawText) return '';
@@ -264,14 +264,14 @@
 
       const titleSpan = selectedRow.querySelector('span.truncate');
       const curTitle = titleSpan ? (titleSpan.textContent || '').trim() : '';
-      if (!curTitle || RE_HAS_CJK.test(curTitle) || !RE_PURE_EN_TITLE.test(curTitle)) return;
+      if (!curTitle || curTitle === 'New Conversation' || curTitle === '新建对话') return;
+      if (RE_HAS_CJK.test(curTitle) || !RE_PURE_EN_TITLE.test(curTitle)) return;
 
       const firstUserMsg = document.querySelector('[data-testid="user-message-content"]');
       if (!firstUserMsg) return;
       const zhTopic = extractChineseTopic(firstUserMsg.textContent || '');
       if (!zhTopic) return;
 
-      processedCids.add(cid);
       const fk = Object.keys(selectedRow).find((k) => k.startsWith('__reactFiber$'));
       if (!fk) return;
       let f = selectedRow[fk];
@@ -279,18 +279,41 @@
         f = f.return;
       }
       if (!f) return;
+
+      let renameFn = null;
       let s = f.memoizedState;
       while (s) {
-        if (Array.isArray(s.memoizedState) && typeof s.memoizedState[0] === 'function') {
-          if (s.memoizedState[0].toString().includes('updateOptimisticSummary')) {
-            s.memoizedState[0](zhTopic);
+        const ms = s.memoizedState;
+        const fn =
+          typeof ms === 'function'
+            ? ms
+            : Array.isArray(ms) && typeof ms[0] === 'function'
+              ? ms[0]
+              : null;
+        if (fn) {
+          const src = fn.toString();
+          if (
+            src.includes('rename-conversation-error') ||
+            src.includes('CONVERSATION_RENAME_FAILED') ||
+            src.includes('annotations:{title:') ||
+            src.includes('updateOptimisticSummary')
+          ) {
+            renameFn = fn;
             break;
           }
         }
         s = s.next;
       }
+
+      if (renameFn) {
+        processedCids.add(cid);
+        Promise.resolve(renameFn(zhTopic)).catch(() => {
+          processedCids.delete(cid);
+        });
+      }
     } catch (e) {}
   }
+  setTimeout(autoLocalizeActiveConvTitle, 700);
 
   // ============================================================================
   // 6. 上下文 85% 自动压缩防卡死守卫（Auto-Compact Guard + 底部胶囊一键压缩按钮）
