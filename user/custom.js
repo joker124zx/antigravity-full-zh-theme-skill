@@ -122,35 +122,17 @@
     window.addEventListener('pointerdown', onMenuBtnTrigger, true);
   }
 
-  // 3. 切换历史对话时大幅错峰读取 SQLite：推迟 1200ms 并配合 requestIdleCallback 再通知后台守护进程解析 .db 指标，彻底杜绝与 Antigravity 主程序抢占磁盘 IO
-  if (typeof window.__agRequestMetrics === 'function' && !window.__ag_orig_req_metrics) {
-    window.__ag_orig_req_metrics = window.__agRequestMetrics;
-  }
+  // 3. 保持 Chromium 原生 C++ Runtime.addBinding (__agRequestMetrics / __ag_on_session_change) 纯净直通
+  // 注意：绝不在 window 上用普通 JS 函数覆盖 __agRequestMetrics，否则守护进程重连时 C++ 绑定无法重新挂载会导致胶囊断流
   if (window.__ag_orig_req_metrics) {
-    let metricsDebounceTimer = null;
-    const deferredReq = (cid) => {
-      if (metricsDebounceTimer) clearTimeout(metricsDebounceTimer);
-      metricsDebounceTimer = setTimeout(() => {
-        metricsDebounceTimer = null;
-        const invoke = () => {
-          try {
-            window.__ag_orig_req_metrics(cid);
-          } catch (e) {}
-        };
-        if (typeof window.requestIdleCallback === 'function') {
-          window.requestIdleCallback(invoke, { timeout: 1000 });
-        } else {
-          invoke();
-        }
-      }, 1200);
-    };
     try {
-      window.__agRequestMetrics = deferredReq;
-      window.__ag_on_session_change = () => {};
+      delete window.__agRequestMetrics;
+      delete window.__ag_on_session_change;
+      delete window.__ag_orig_req_metrics;
     } catch (e) {}
   }
 
-  // 4. 优化 core/runtime.js 的 1500ms 路由轮询：仅在 URL 实际变化或未挂载胶囊时才触发 DOM 查询
+  // 4. 优化路由与指标自愈巡检：确保 URL 切换、守护进程重连或新建空白会话时，Token 胶囊与 ⚡85%自动 按钮始终在线
   if (window.__ag_metrics_route_watcher) {
     try {
       clearInterval(window.__ag_metrics_route_watcher);
@@ -162,10 +144,23 @@
     if (document.hidden) return;
     const curHref = window.location.href;
     const pill = document.getElementById('ag-live-metrics-pill');
-    if (curHref !== lastHref || !pill) {
+    const btn = document.getElementById('ag-auto-compact-btn');
+    const cidMatch = window.location.pathname.match(/\/c\/([0-9a-f-]{36})/i);
+    const curCid = cidMatch ? cidMatch[1] : '';
+    const metricsMismatch = !!(curCid && (!window.__ag_last_metrics || window.__ag_last_metrics.cascadeId !== curCid));
+
+    if (curHref !== lastHref || !pill || !btn || metricsMismatch) {
       lastHref = curHref;
+      if (metricsMismatch && typeof window.__agRequestMetrics === 'function') {
+        window.__ag_watched_cascade_id = '';
+      }
       if (typeof window.__ag_check_route_fn === 'function') {
         window.__ag_check_route_fn();
+      }
+      if (typeof updateAutoCompactBadge === 'function') {
+        try {
+          updateAutoCompactBadge(window.__ag_last_metrics || null);
+        } catch (e) {}
       }
     }
     const runIdleTasks = () => {
@@ -177,7 +172,7 @@
     } else {
       runIdleTasks();
     }
-  }, 3500);
+  }, 2500);
 
   // 4.5 轻量汉化 v2.31.0 外框动态文本（Updated HH:MM、Today HH:MM、Trajectory ID 与按钮无障碍提示，绝不扫描对话消息区）
   const RE_UPDATED_AT = /^Updated\s+(.+)$/;
@@ -488,15 +483,41 @@
     return m ? parseInt(m[1], 10) : 0;
   }
 
+  function findComposerFooterLeftGroup() {
+    const box = document.getElementById('antigravity.agentSidePanelInputBox');
+    if (!box) return null;
+    const footer =
+      box.querySelector('.agy-composer-footer') ||
+      box.querySelector('div.flex.w-full.items-center.justify-between');
+    if (!footer) return null;
+    return footer.firstElementChild || footer;
+  }
+
   function updateAutoCompactBadge(payload) {
+    const isChatPage = window.location.pathname.startsWith('/c/');
     const pill = document.getElementById('ag-live-metrics-pill');
-    if (!pill) return;
+    const pillVisible = !!(pill && pill.style.display !== 'none');
     let btn = document.getElementById('ag-auto-compact-btn');
+
+    if (!isChatPage) {
+      if (btn && !pillVisible) btn.style.display = 'none';
+      return;
+    }
+
+    const mountTarget = pillVisible ? pill : findComposerFooterLeftGroup();
+    if (!mountTarget) return;
+
     if (!btn) {
       btn = document.createElement('span');
       btn.id = 'ag-auto-compact-btn';
-      pill.appendChild(btn);
     }
+    if (btn.parentElement !== mountTarget) {
+      mountTarget.appendChild(btn);
+    }
+    if (btn.style.display === 'none') {
+      btn.style.display = 'inline-flex';
+    }
+
     btn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -516,20 +537,24 @@
       );
     };
 
+    const currentCidMatch = window.location.pathname.match(/\/c\/([0-9a-f-]{36})/i);
+    const currentCid = currentCidMatch ? currentCidMatch[1] : '';
+    const validPayload = payload && payload.cascadeId === currentCid ? payload : null;
+
     const enabled = isAutoCompactEnabled();
     const threshold = getAutoCompactThreshold();
-    const pct = parseCtxPctFromPayload(payload);
+    const pct = parseCtxPctFromPayload(validPayload);
     btn.setAttribute('data-enabled', enabled ? '1' : '0');
     btn.setAttribute('data-high', pct >= threshold ? '2' : pct >= threshold - 10 ? '1' : '0');
     btn.textContent = enabled ? `⚡${threshold}%自动` : '⚡自动:关';
     btn.title = `当前上下文水位：${pct}%（自动压缩阈值：${threshold}%）\n• 左键点击：立即发送 /compact 精简上下文\n• 右键点击：开启 / 关闭 ${threshold}% 自动压缩`;
 
-    if (!enabled || !payload || !payload.hasData || !payload.cascadeId) return;
+    if (!enabled || !validPayload || !validPayload.hasData || !validPayload.cascadeId) return;
     if (pct < threshold) return;
 
     const now = Date.now();
-    const lastRecord = compactCooldownMap.get(payload.cascadeId);
-    if (lastRecord && (now - lastRecord.ts < 180000 || lastRecord.sig === payload.sig)) {
+    const lastRecord = compactCooldownMap.get(validPayload.cascadeId);
+    if (lastRecord && (now - lastRecord.ts < 180000 || lastRecord.sig === validPayload.sig)) {
       return;
     }
 
@@ -542,11 +567,11 @@
       if (!editor || getEditorText(editor).length > 0 || document.activeElement === editor) return;
 
       const latestPayload = window.__ag_last_metrics;
-      if (!latestPayload || latestPayload.cascadeId !== payload.cascadeId) return;
+      if (!latestPayload || latestPayload.cascadeId !== validPayload.cascadeId) return;
       const latestPct = parseCtxPctFromPayload(latestPayload);
       if (latestPct < getAutoCompactThreshold()) return;
 
-      compactCooldownMap.set(payload.cascadeId, { ts: Date.now(), sig: latestPayload.sig });
+      compactCooldownMap.set(validPayload.cascadeId, { ts: Date.now(), sig: latestPayload.sig });
       executeSlashCompact(false);
     }, 1800);
   }
