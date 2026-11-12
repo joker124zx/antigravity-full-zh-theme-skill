@@ -1,0 +1,37 @@
+{
+  "name": "antigravity-full-zh-theme-skill",
+  "version": "1.2.0",
+  "description": "Antigravity (v2.31.2+) 全域简体中文汉化 (2,515 词条)、Claude 暖色主题增强与 85% 自动压缩防卡死技能包",
+  "type": "module",
+  "main": "install.mjs",
+  "bin": {
+    "antigravity-zh-theme": "./install.mjs"
+  },
+  "scripts": {
+    "install-patch": "node install.mjs install",
+    "doctor": "node install.mjs doctor",
+    "verify": "node install.mjs verify",
+    "localize-skills": "node scripts/localize-local-skills.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joker124zx/antigravity-full-zh-theme-skill.git"
+  },
+  "homepage": "https://github.com/joker124zx/antigravity-full-zh-theme-skill#readme",
+  "bugs": {
+    "url": "https://github.com/joker124zx/antigravity-full-zh-theme-skill/issues"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": [
+    "antigravity",
+    "zh-cn",
+    "i18n",
+    "claude-theme",
+    "agent-skill",
+    "cdp"
+  ],
+  "author": "joker124zx (based on chuanban-antigravity-theme-patch v5.0.0 by @Anarcadia)",
+  "license": "MIT"
+}

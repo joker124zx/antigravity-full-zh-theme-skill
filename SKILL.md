@@ -3,9 +3,9 @@ name: antigravity-zh-cn
 description: Antigravity (AGY) 全域简体中文汉化与 Claude 暖色主题增强技能包（基于 Anarcadia/chuanban-antigravity-theme-patch v5.0.0 扩展）。当用户询问如何将 Antigravity 2.0 界面、右键菜单、三点菜单、设置中心、技能与插件市场切换为中文，或需要调整字体颜色、重点字高亮、优化长对话切换卡顿及通过 CDP 实时热更新界面时激活此技能。
 ---
 
-# Antigravity 全域汉化与主题增强技能指南 (`antigravity-zh-cn`)
+# Antigravity 全域汉化与主题增强技能指南 (`antigravity-zh-cn` · `v1.2.0` 适配 `Antigravity v2.31.2+`)
 
-> **开源基础与致谢**：本技能底层热注入框架源自 [**Anarcadia/chuanban-antigravity-theme-patch (v5.0.0)**](https://github.com/Anarcadia/chuanban-antigravity-theme-patch)，在保持 `core/*` 100% 原版完整性 (`coreIntegrity.clean: true`) 的前提下，于 `user/*` 层扩展了 **2,200+ 全域汉化词条**、**Electron 原生右键/三点菜单瞬时拦截**、**朱砂红重点字与等高数字排版**以及**长对话极速防卡顿优化**。
+> **开源基础与致谢**：本技能底层热注入框架源自 [**Anarcadia/chuanban-antigravity-theme-patch (v5.0.0)**](https://github.com/Anarcadia/chuanban-antigravity-theme-patch)，在保持 `core/*` 100% 原版完整性 (`coreIntegrity.clean: true`) 的前提下，于 `user/*` 层扩展了 **2,515 条全域汉化词条**、**85% 上下文自动压缩防卡死胶囊 (`⚡85%自动`)**、**Electron 原生右键/三点菜单瞬时拦截**、**朱砂红重点字与等高数字排版**以及**长对话极速防卡顿优化**。
 
 ---
 

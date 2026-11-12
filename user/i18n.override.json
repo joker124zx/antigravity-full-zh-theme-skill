@@ -2089,5 +2089,7 @@
   "Not set": "未设置",
   "No recordings": "暂无录音",
   "New Conversation": "新建对话",
-  "CLI Project": "CLI 项目"
+  "CLI Project": "CLI 项目",
+  "swarm/swarm_board": "蜂群协作看板",
+  "swarm_board": "蜂群协作看板"
 }

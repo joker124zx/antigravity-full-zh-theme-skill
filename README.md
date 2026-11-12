@@ -5,8 +5,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Antigravity-2.0%2B-B43E18?style=flat-square" alt="Antigravity 2.0+" />
-  <img src="https://img.shields.io/badge/i18n_Dictionary-2201_Entries-2E6B9E?style=flat-square" alt="2201 Entries" />
+  <img src="https://img.shields.io/badge/Version-v1.2.0-D97757?style=flat-square" alt="Version v1.2.0" />
+  <img src="https://img.shields.io/badge/Antigravity-v2.31.2%2B-B43E18?style=flat-square" alt="Antigravity v2.31.2+" />
+  <img src="https://img.shields.io/badge/i18n_Dictionary-2515_Entries-2E6B9E?style=flat-square" alt="2515 Entries" />
   <img src="https://img.shields.io/badge/Core_Integrity-100%25_Clean-2E7D32?style=flat-square" alt="Core Integrity Clean" />
   <img src="https://img.shields.io/badge/License-MIT-7A6A58?style=flat-square" alt="MIT License" />
 </p>
@@ -16,7 +17,7 @@
 >
 > 本项目基于 [**@Anarcadia (忒修斯的船板)**](https://github.com/Anarcadia)（X/Twitter: [**@Arcadia_Bao**](https://x.com/Arcadia_Bao)）开源的 [**`chuanban-antigravity-theme-patch` (v5.0.0)**](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) 进行深度扩展与二次封装。
 > - **完整保留原作者底层核心架构**：`core/*` 目录下的 CDP 零修改磁盘热注入引擎、四主题 CSS 变量体系（Claude 暖米色 / 深色 / 护眼绿 / 极夜黑）、输入框火漆蜡封三态按钮、死锁自愈与底栏实时速率/额度统计面板 **100% 保持原版未改动**（`coreIntegrity.clean: true`）。
-> - **全方位扩展在 `user/*` 用户层与 `SKILL.md` 技能层完成**：词条规模从原版 573 条扩展至 **2,201 条全域词典**，攻克了 Windows 原生系统级右键菜单（`showContextMenu` IPC）与会话三点菜单（`⋮`）无法被 DOM 观察器汉化的难题；将原版死板的 **2×2 四个灰点运行图标升级为 Claude 陶土暖橙动态旋转光环 + 中心呼吸圆点**；新增 **朱砂暖砖红重点字 (`#B43E18`) + 等高数字 (`lining-nums`)**、**五色高辨识度代码文件胶囊**、**四维长对话极速防卡顿优化** 及 **Agent Skill 自动化维护能力**。在此向原作者 **忒修斯的船板 (@Arcadia_Bao / @Anarcadia)** 致以诚挚谢意！
+> - **全方位扩展在 `user/*` 用户层与 `SKILL.md` 技能层完成（当前版本 `v1.2.0`，全面适配 Antigravity `v2.31.2+`）**：词条规模从原版基础词表扩展至 **2,515 条全域合并词典**（含 `v2.31.2` 最新「知识办公 / 软件工程」双布局模式、蜂群协作看板 `swarm/swarm_board`、扩展中心、旁路追问、语音模式与全量设置面板），攻克了 Windows 原生系统级右键菜单（`showContextMenu` IPC）与会话三点菜单（`⋮`）无法被 DOM 观察器汉化的难题；将原版死板的 **2×2 四个灰点运行图标升级为 Claude 陶土暖橙动态旋转光环 + 中心呼吸圆点**；新增 **上下文 85% 自动压缩防卡死胶囊 (`⚡85%自动`)**、**朱砂暖砖红重点字 (`#B43E18`) + 等高数字 (`lining-nums`)**、**五色高辨识度代码文件胶囊**、**长对话极速防卡顿优化** 及 **Agent Skill 自动化维护能力**。在此向原作者 **忒修斯的船板 (@Arcadia_Bao / @Anarcadia)** 致以诚挚谢意！
 
 ---
 
@@ -41,9 +42,9 @@
 
 ## 二、全方位增强矩阵：与上游原版逐项对比
 
-| 功能维度 | 上游原版 (`chuanban-antigravity-theme-patch` v5.0.0) | 本项目 (`antigravity-full-zh-theme-skill` 全域增强版) |
+| 功能维度 | 上游原版 (`chuanban-antigravity-theme-patch` v5.0.0) | 本项目 (`antigravity-full-zh-theme-skill` v1.2.0) |
 | :--- | :--- | :--- |
-| **汉化词条规模** | `core/i18n.json` **573 条**基础界面词条 | `core` + `user/i18n.override.json` 合并 **2,201 条**全域词典 |
+| **汉化词条规模** | `core/i18n.json` 基础界面词条 | `core` + `user/i18n.override.json` 合并 **2,515 条**全域词典（完整覆盖 `v2.31.2+` 双布局模式、蜂群看板、设置二级项） |
 | **「正在运行」状态图标** | 原版默认 **2×2 四个灰点** 闪烁，辨识度低 | **升级为 Claude 陶土暖橙 (`#D97757`) 动态旋转光环 + 中心呼吸圆点**（侧边栏与对话区同步生效） |
 | **重点加粗字 (`strong`/`b`) 与数字排版** | 与普通正文同色（黑灰），古典衬线数字 (`57,793`) 高低错落 | **朱砂暖砖红 (`#B43E18`) 醒目高亮**（深色模式自动转琥珀金 `#F0944D`）+ 强制 **`lining-nums` 等高现代数字** |
 | **代码文件胶囊 (`.inline-pill`)** | 默认无背景或单色，与正文混在一起难以分辨 | **按后缀自动赋予五色高辨识度胶囊**：`.js/.mjs` 琥珀金、`.json` 暖橙、`.css` 靛蓝、`.ts/.tsx` 蔚蓝、`.md` 翠绿 |
@@ -147,14 +148,15 @@ antigravity-full-zh-theme-skill/
 │   └── manifest.json             # 核心文件 SHA-256 完整性校验清单
 ├── user/                         # [全域扩展层] 所有汉化增强、右键拦截与样式定制均在此处
 │   ├── config.json               # 启用 excludeI18n、双通道监控与主题预设
-│   ├── custom.css                # 陶土橙旋转光环、朱砂红重点字、lining-nums、五色文件胶囊、虚拟滚动提速
-│   ├── custom.js                 # 原生右键/三点菜单 120ms 瞬时拦截、相对时间汉化、SQLite 防抖与观察器防断连
-│   └── i18n.override.json        # 1,746+ 条扩展词典（覆盖右键、设置、技能、插件、MCP、斜杠命令）
+│   ├── custom.css                # 陶土橙旋转光环、朱砂红重点字、lining-nums、五色文件胶囊、分栏布局隔离
+│   ├── custom.js                 # 原生右键/三点菜单瞬时拦截、85%自动压缩守卫、v2.31+ 新对话自动中文标题
+│   └── i18n.override.json        # 2,093 条扩展词典（合并共 2,515 条，覆盖右键、设置、蜂群看板、技能、插件、MCP）
 ├── scripts/
-│   └── localize-local-skills.mjs # 本地 SKILL.md / plugin.json 描述一键汉化工具（带 .bak 备份）
+│   └── localize-local-skills.mjs # 本地 SKILL.md / plugin.json 描述一键汉化工具（支持折叠 YAML 与 .bak 备份）
 ├── assets/
 │   └── screenshots/              # 5 张实机高清截图展示 (主界面、视觉特写、右键菜单、设置、技能市场)
 ├── AntigravityThemeDaemon.vbs    # Windows WMI 零弹窗后台自动热注入守护脚本
+├── package.json                  # 版本清单 (v1.2.0 · 适配 Antigravity v2.31.2+)
 ├── SKILL.md                      # Antigravity 技能定义文件（支持 AI 自动维护与热更新）
 ├── install.mjs                   # 跨平台一键安装与热更新脚本
 └── LICENSE                       # MIT 开源协议（含上游致谢）
@@ -165,5 +167,5 @@ antigravity-full-zh-theme-skill/
 ## 六、致谢与开源协议 (Credits & License)
 
 - **上游基础项目**：[**Anarcadia/chuanban-antigravity-theme-patch**](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) — 感谢 **忒修斯的船板 (@Anarcadia)**（X/Twitter: [**@Arcadia_Bao**](https://x.com/Arcadia_Bao)）设计的无侵入式 CDP 注入架构、四套精美主题配色、火漆蜡封按钮与双通道统计面板。
-- **全域汉化与视觉/性能扩展**：[**@joker124zx**](https://github.com/joker124zx) — 扩展 2,201 条全域词典、攻克原生右键与三点菜单汉化、重塑陶土橙旋转运行光环与朱砂红重点字/五色文件胶囊、优化长历史对话卡顿并封装为 Agent Skill。
+- **全域汉化与视觉/性能扩展 (`v1.2.0`)**：[**@joker124zx**](https://github.com/joker124zx) — 扩展 2,515 条全域词典（适配 Antigravity `v2.31.2+`）、攻克原生右键与三点菜单汉化、内置 85% 自动上下文压缩防卡死胶囊、重塑陶土橙旋转运行光环与朱砂红重点字/五色文件胶囊、优化长历史对话卡顿并封装为 Agent Skill。
 - **开源协议**：本项目遵循 [MIT License](LICENSE) 开源协议。

@@ -31,8 +31,9 @@ aside button {
   font-kerning: none;
 }
 
-/* 1.6 v2.31.0 分栏渲染隔离：右侧产物预览器 (Artifact Viewer)、侧边栏与大型代码块独立布局边界，避免打字流式输出触发跨栏重排 */
-.bg-sidebar,
+/* 1.6 v2.31.0 分栏渲染隔离：右侧产物预览器 (Artifact Viewer)、侧边栏根容器与大型代码块独立布局边界，避免打字流式输出触发跨栏重排（严禁对全局 .bg-sidebar 加 contain: layout，否则会锁死顶栏 [data-testid="title-menu-bar"] 的层叠上下文导致下拉菜单被主界面遮挡） */
+[role="navigation"].bg-sidebar,
+[data-testid="settings-sidebar"],
 aside,
 [aria-label="Artifact Viewer"],
 [aria-label="产物预览器"],
