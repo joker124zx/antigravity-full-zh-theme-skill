@@ -2091,5 +2091,22 @@
   "New Conversation": "新建对话",
   "CLI Project": "CLI 项目",
   "swarm/swarm_board": "蜂群协作看板",
-  "swarm_board": "蜂群协作看板"
+  "swarm_board": "蜂群协作看板",
+  "Develop ideas with context and review documents with fresh eyes.": "结合丰富上下文构思创意，再以全新客观视角审阅文档（大象-金鱼双视角模型）。",
+  "AI-powered code review, review-comment autofix, and repository configuration, powered by CodeRabbit.": "由 CodeRabbit 驱动的 AI 智能代码审查、评审意见自动修复与仓库规则配置。",
+  "Up-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your coding agent's context.": "实时检索最新开发文档，直接从源码仓库拉取特定版本的官方文档与代码示例注入智能体上下文。",
+  "Search, read, draft, and send emails in Gmail.": "在 Gmail 中搜索、阅读、起草并发送电子邮件。",
+  "Connect to your managed Looker MCP server to explore data, run saved Looks, build dashboards, and validate LookML.": "连接托管的 Looker MCP 服务器，探索业务数据、运行已保存视图、构建看板并校验 LookML。",
+  "Query Arize AX projects, traces, datasets, and experiments from Antigravity, with skills for tracing, evals, and prompt optimization.": "在 Antigravity 中查询 Arize AX 项目、链路追踪、数据集与实验，内置追踪分析、评测与提示词优化技能。",
+  "The AI notepad for meetings. Connect to your meeting history and use your conversation context to get things done.": "面向会议的 AI 智能记事本。连接您的历史会议记录，结合对话上下文高效推进待办事项。",
+  "Connect your agent to invideo's AI-native video editor. It trims, grades and mixes on a real timeline while you watch every change land.": "将智能体连接至 invideo 原生 AI 视频编辑器，在真实时间线上完成剪辑、调色与混音，实时见证每一步修改落地。",
+  "Agent skills for Neo4j graph database — write Cypher queries, design graph models, use drivers, run imports, build GraphRAG pipelines, run GDS algorithms, and manage Aura instances.": "面向 Neo4j 图数据库的智能体技能套件——编写 Cypher 查询、设计图数据模型、调用驱动、导入数据、构建 GraphRAG 管线、运行图算法及管理 Aura 实例。",
+  "Files and resources in cloud workspaces": "云端工作区中的文件与资源",
+  "Here's how uploaded files, attachments, and connected resources work in your cloud environment": "以下是上传文件、附件与已连接资源在云端环境中的工作方式",
+  "Uploaded files and connected resources are mounted in your cloud environment.": "上传的文件与已连接的外部资源已挂载至您的云端环境。",
+  "Hey there, what should we build today?": "嗨，今天想构建点什么？",
+  "Welcome back. Where should we pick up?": "欢迎回来，我们接着做哪部分？",
+  "Good to see you. What's next?": "很高兴见到您，接下来做点什么？",
+  "Google does not control the availability or functionality of third party developer tools. Your data from third party developer tools connected to your Antigravity instance may be shared with Google. Google will protect any such data in accordance with the Google Privacy Policy, found here:": "Google 不控制第三方开发者工具的可用性或功能。您通过连接到 Antigravity 实例的第三方开发者工具产生的数据可能会与 Google 共享。Google 将严格按照《Google 隐私权政策》保护此类数据，详情请参阅：",
+  "Google does not control the availability or functionality of third-party developer tools. Your data from third-party developer tools connected to your Antigravity instance may be shared with Google. Google will protect any such data in accordance with the Google Privacy Policy, found here:": "Google 不控制第三方开发者工具的可用性或功能。您通过连接到 Antigravity 实例的第三方开发者工具产生的数据可能会与 Google 共享。Google 将严格按照《Google 隐私权政策》保护此类数据，详情请参阅："
 }

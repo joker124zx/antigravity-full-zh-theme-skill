@@ -174,51 +174,81 @@
     }
   }, 2500);
 
-  // 4.5 轻量汉化外框与设置弹窗动态文本（Updated HH:MM、Modified in X、N projects、Today HH:MM、Trajectory ID，绝不扫描对话消息区）
+  // 4.5 轻量汉化外框、设置弹窗、插件市场与首页动态文本（绝不扫描对话消息区 autoscroll-viewport 与代码编辑器）
   const RE_UPDATED_AT = /^Updated\s+(.+)$/;
   const RE_MODIFIED_IN = /^Modified in\s+(.+)$/;
   const RE_N_PROJECTS = /^(\d+)\s+projects?$/i;
+  const RE_SEE_N_MORE = /^See\s+(\d+)\s+more(?:\s+.*)?$/i;
+  const RE_GREET_HEY = /^Hey\s+(.+?),\s*what should we build today\?$/i;
+  const RE_GREET_WELCOME = /^Welcome back,\s*(.+?)\.\s*Where should we pick up\?$/i;
+  const RE_GREET_GOOD = /^Good to see you,\s*(.+?)\.\s*What['’]s next\?$/i;
   const RE_TODAY_TIME = /\(Today\s+([^)]+)\)/g;
   const RE_YESTERDAY_TIME = /\(Yesterday\s+([^)]+)\)/g;
   const RE_TRAJECTORY_ID = /^Trajectory ID:\s*(.+)$/;
+  const DISCLAIMER_ZH =
+    'Google 不控制第三方开发者工具的可用性或功能。您通过连接到 Antigravity 实例的第三方开发者工具产生的数据可能会与 Google 共享。Google 将严格按照《Google 隐私权政策》保护此类数据，详情请参阅： ';
 
-  function localizeDynamicChromeStrings() {
+  function translateDynamicString(raw, dict) {
+    if (!raw || raw.length > 420) return null;
+    const s = raw.trim();
+    if (!s || !/[A-Za-z]/.test(s)) return null;
+    if (dict[s]) return raw.replace(s, dict[s]);
+    if (RE_SEE_N_MORE.test(s)) return raw.replace(RE_SEE_N_MORE, '展开其余 $1 项');
+    if (RE_UPDATED_AT.test(s)) return raw.replace(RE_UPDATED_AT, '更新于 $1');
+    if (RE_MODIFIED_IN.test(s)) return raw.replace(RE_MODIFIED_IN, '修改自项目：$1');
+    if (RE_N_PROJECTS.test(s)) return raw.replace(RE_N_PROJECTS, '$1 个项目');
+    if (RE_GREET_GOOD.test(s)) return raw.replace(RE_GREET_GOOD, '很高兴见到您，$1。接下来做点什么？');
+    if (RE_GREET_WELCOME.test(s)) return raw.replace(RE_GREET_WELCOME, '欢迎回来，$1。我们接着做哪部分？');
+    if (RE_GREET_HEY.test(s)) return raw.replace(RE_GREET_HEY, '嗨，$1，今天想构建点什么？');
+    if (s.startsWith('Google does not control the availability or functionality of third')) {
+      return DISCLAIMER_ZH;
+    }
+    if (s.includes('(Today ')) return raw.replace(RE_TODAY_TIME, '（今天 $1）');
+    if (s.includes('(Yesterday ')) return raw.replace(RE_YESTERDAY_TIME, '（昨天 $1）');
+    if (RE_TRAJECTORY_ID.test(s)) return raw.replace(RE_TRAJECTORY_ID, '轨迹 ID：$1');
+    return null;
+  }
+
+  function localizeDynamicChromeStrings(rootNode) {
     try {
       const dict = window.__ag_i18n_dict || {};
-      // 1) 汉化顶栏/侧栏/标签栏/产物栏/设置弹窗的动态文本节点（严格跳过聊天消息正文与编辑器）
-      const containers = document.querySelectorAll('header, aside, .bg-sidebar, [role="dialog"], [role="tablist"], [role="tab"], [aria-label="Artifact Viewer"], [aria-label="产物预览器"], [data-testid*="artifact"], footer');
-      for (let i = 0; i < containers.length; i++) {
-        const walker = document.createTreeWalker(containers[i], NodeFilter.SHOW_TEXT);
-        let tn;
-        while ((tn = walker.nextNode())) {
-          const raw = tn.nodeValue;
-          if (!raw || raw.length > 220) continue;
-          if (tn.parentElement && tn.parentElement.closest('[data-testid="autoscroll-viewport"], pre, code')) continue;
-          const s = raw.trim();
-          if (!s) continue;
-          let next = null;
-          if (dict[s]) {
-            next = raw.replace(s, dict[s]);
-          } else if (RE_UPDATED_AT.test(s)) {
-            next = raw.replace(RE_UPDATED_AT, '更新于 $1');
-          } else if (RE_MODIFIED_IN.test(s)) {
-            next = raw.replace(RE_MODIFIED_IN, '修改自项目：$1');
-          } else if (RE_N_PROJECTS.test(s)) {
-            next = raw.replace(RE_N_PROJECTS, '$1 个项目');
-          } else if (s.includes('(Today ')) {
-            next = raw.replace(RE_TODAY_TIME, '（今天 $1）');
-          } else if (s.includes('(Yesterday ')) {
-            next = raw.replace(RE_YESTERDAY_TIME, '（昨天 $1）');
-          } else if (RE_TRAJECTORY_ID.test(s)) {
-            next = raw.replace(RE_TRAJECTORY_ID, '轨迹 ID：$1');
-          }
-          if (next && next !== raw) {
-            tn.nodeValue = next;
+      const root = rootNode && rootNode.nodeType === 1 ? rootNode : document.body;
+      if (!root) return;
+      if (root.closest && root.closest('[data-testid="autoscroll-viewport"], [contenteditable="true"], .monaco-editor, pre, code')) {
+        return;
+      }
+
+      const walker = document.createTreeWalker(
+        root,
+        NodeFilter.SHOW_TEXT,
+        {
+          acceptNode(node) {
+            const p = node.parentElement;
+            if (!p) return NodeFilter.FILTER_REJECT;
+            const tag = p.tagName;
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'CODE' || tag === 'PRE' || tag === 'TEXTAREA') {
+              return NodeFilter.FILTER_REJECT;
+            }
+            if (p.closest('[data-testid="autoscroll-viewport"], [contenteditable="true"], .monaco-editor, #ag-live-metrics-pill')) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            return NodeFilter.FILTER_ACCEPT;
           }
         }
+      );
+
+      let tn;
+      while ((tn = walker.nextNode())) {
+        const next = translateDynamicString(tn.nodeValue, dict);
+        if (next && next !== tn.nodeValue) {
+          tn.nodeValue = next;
+        }
       }
+
       // 2) 汉化外框按钮的 placeholder / title / aria-label 悬停提示
-      const attrEls = document.querySelectorAll('button[aria-label], button[title], input[placeholder]');
+      const attrEls = root.querySelectorAll
+        ? root.querySelectorAll('button[aria-label], button[title], input[placeholder]')
+        : [];
       for (let j = 0; j < attrEls.length; j++) {
         const el = attrEls[j];
         if (el.closest('[data-testid="autoscroll-viewport"]')) continue;
@@ -228,6 +258,8 @@
           const trimmed = val.trim();
           if (dict[trimmed]) {
             el.setAttribute(attr, dict[trimmed]);
+          } else if (RE_SEE_N_MORE.test(trimmed)) {
+            el.setAttribute(attr, trimmed.replace(RE_SEE_N_MORE, '展开其余 $1 项'));
           } else if (trimmed.startsWith('Select model, current: ')) {
             el.setAttribute(attr, '选择模型（当前：' + trimmed.slice(23) + '）');
           } else if (trimmed.startsWith('Close ')) {
@@ -237,7 +269,36 @@
       }
     } catch (e) {}
   }
-  setTimeout(localizeDynamicChromeStrings, 400);
+
+  if (window.__ag_dyn_chrome_observer) {
+    try {
+      window.__ag_dyn_chrome_observer.disconnect();
+    } catch (e) {}
+    window.__ag_dyn_chrome_observer = null;
+  }
+  let dynRafPending = false;
+  window.__ag_dyn_chrome_observer = new MutationObserver((mutations) => {
+    if (dynRafPending) return;
+    let hasRelevant = false;
+    for (let i = 0; i < mutations.length; i++) {
+      const t = mutations[i].target;
+      const el = t && t.nodeType === 1 ? t : t ? t.parentElement : null;
+      if (el && !el.closest('[data-testid="autoscroll-viewport"], [contenteditable="true"], .monaco-editor, #ag-live-metrics-pill, #ag-live-metrics-tooltip')) {
+        hasRelevant = true;
+        break;
+      }
+    }
+    if (!hasRelevant) return;
+    dynRafPending = true;
+    requestAnimationFrame(() => {
+      dynRafPending = false;
+      localizeDynamicChromeStrings(document.body);
+    });
+  });
+  if (document.body) {
+    window.__ag_dyn_chrome_observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+  setTimeout(() => localizeDynamicChromeStrings(document.body), 250);
 
   // 5. 当新建对话被后端自动生成英文标题时，若用户首条提问包含中文，自动将其重命名为中文标题（兼容 v2.31.0+ annotations.title 与旧版 updateOptimisticSummary）
   const RE_HAS_CJK = /[\u4e00-\u9fa5]/;
