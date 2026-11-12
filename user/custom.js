@@ -174,8 +174,10 @@
     }
   }, 2500);
 
-  // 4.5 轻量汉化 v2.31.0 外框动态文本（Updated HH:MM、Today HH:MM、Trajectory ID 与按钮无障碍提示，绝不扫描对话消息区）
+  // 4.5 轻量汉化外框与设置弹窗动态文本（Updated HH:MM、Modified in X、N projects、Today HH:MM、Trajectory ID，绝不扫描对话消息区）
   const RE_UPDATED_AT = /^Updated\s+(.+)$/;
+  const RE_MODIFIED_IN = /^Modified in\s+(.+)$/;
+  const RE_N_PROJECTS = /^(\d+)\s+projects?$/i;
   const RE_TODAY_TIME = /\(Today\s+([^)]+)\)/g;
   const RE_YESTERDAY_TIME = /\(Yesterday\s+([^)]+)\)/g;
   const RE_TRAJECTORY_ID = /^Trajectory ID:\s*(.+)$/;
@@ -183,14 +185,15 @@
   function localizeDynamicChromeStrings() {
     try {
       const dict = window.__ag_i18n_dict || {};
-      // 1) 汉化顶栏/侧栏/标签栏/产物栏的动态时间戳文本节点（严格跳过聊天消息正文与编辑器）
-      const containers = document.querySelectorAll('header, aside, .bg-sidebar, [role="tablist"], [role="tab"], [aria-label="Artifact Viewer"], [aria-label="产物预览器"], [data-testid*="artifact"], footer');
+      // 1) 汉化顶栏/侧栏/标签栏/产物栏/设置弹窗的动态文本节点（严格跳过聊天消息正文与编辑器）
+      const containers = document.querySelectorAll('header, aside, .bg-sidebar, [role="dialog"], [role="tablist"], [role="tab"], [aria-label="Artifact Viewer"], [aria-label="产物预览器"], [data-testid*="artifact"], footer');
       for (let i = 0; i < containers.length; i++) {
         const walker = document.createTreeWalker(containers[i], NodeFilter.SHOW_TEXT);
         let tn;
         while ((tn = walker.nextNode())) {
           const raw = tn.nodeValue;
-          if (!raw || raw.length > 90) continue;
+          if (!raw || raw.length > 220) continue;
+          if (tn.parentElement && tn.parentElement.closest('[data-testid="autoscroll-viewport"], pre, code')) continue;
           const s = raw.trim();
           if (!s) continue;
           let next = null;
@@ -198,6 +201,10 @@
             next = raw.replace(s, dict[s]);
           } else if (RE_UPDATED_AT.test(s)) {
             next = raw.replace(RE_UPDATED_AT, '更新于 $1');
+          } else if (RE_MODIFIED_IN.test(s)) {
+            next = raw.replace(RE_MODIFIED_IN, '修改自项目：$1');
+          } else if (RE_N_PROJECTS.test(s)) {
+            next = raw.replace(RE_N_PROJECTS, '$1 个项目');
           } else if (s.includes('(Today ')) {
             next = raw.replace(RE_TODAY_TIME, '（今天 $1）');
           } else if (s.includes('(Yesterday ')) {
