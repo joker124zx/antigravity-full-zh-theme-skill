@@ -1,7 +1,7 @@
 {
   "name": "antigravity-full-zh-theme-skill",
-  "version": "1.2.0",
-  "description": "Antigravity (v2.31.2+) 全域简体中文汉化 (2,515 词条)、Claude 暖色主题增强与 85% 自动压缩防卡死技能包",
+  "version": "1.3.0",
+  "description": "Antigravity (v2.32.1+) 全域简体中文汉化 (2,955 词条，含编排器模型与 75 款市场插件)、Claude 暖色主题增强与 85% 自动压缩防卡死技能包",
   "type": "module",
   "main": "install.mjs",
   "bin": {
