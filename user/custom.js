@@ -1,5 +1,5 @@
 /**
- * user/custom.js — 极速切换对话（SQLite 错峰读取 + 零 Observer 泄漏）、按需右键/三点菜单汉化（平时 100% 原生 Array.map）与新会话自动中文标题守卫
+ * user/custom.js — 极速切换对话（增量 O(1) 脏节点汉化，彻底告别全屏 TreeWalker 卡顿）、按需右键/三点菜单汉化（平时 100% 原生 Array.map）与 85% 上下文自动压缩守卫
  */
 (() => {
   // 1. 清理任何旧版残留定时器和额外 Observer，防止热更新时旧 MutationObserver 叠加泄漏
@@ -108,7 +108,6 @@
       },
       true
     );
-    // 仅针对弹出式菜单按钮（⋮ 三点菜单、aria-haspopup="menu"）启用瞬时拦截，普通按钮与对话点击 100% 保持原生 Array.map
     const onMenuBtnTrigger = (e) => {
       const t = e.target;
       if (
@@ -123,7 +122,6 @@
   }
 
   // 3. 保持 Chromium 原生 C++ Runtime.addBinding (__agRequestMetrics / __ag_on_session_change) 纯净直通
-  // 注意：绝不在 window 上用普通 JS 函数覆盖 __agRequestMetrics，否则守护进程重连时 C++ 绑定无法重新挂载会导致胶囊断流
   if (window.__ag_orig_req_metrics) {
     try {
       delete window.__agRequestMetrics;
@@ -132,52 +130,14 @@
     } catch (e) {}
   }
 
-  // 4. 优化路由与指标自愈巡检：确保 URL 切换、守护进程重连或新建空白会话时，Token 胶囊与 ⚡85%自动 按钮始终在线
-  if (window.__ag_metrics_route_watcher) {
-    try {
-      clearInterval(window.__ag_metrics_route_watcher);
-    } catch (e) {}
-    window.__ag_metrics_route_watcher = null;
-  }
-  let lastHref = '';
-  window.__ag_metrics_route_watcher = setInterval(() => {
-    if (document.hidden) return;
-    const curHref = window.location.href;
-    const pill = document.getElementById('ag-live-metrics-pill');
-    const btn = document.getElementById('ag-auto-compact-btn');
-    const cidMatch = window.location.pathname.match(/\/c\/([0-9a-f-]{36})/i);
-    const curCid = cidMatch ? cidMatch[1] : '';
-    const metricsMismatch = !!(curCid && (!window.__ag_last_metrics || window.__ag_last_metrics.cascadeId !== curCid));
+  // 4. 增量汉化外框、设置弹窗、插件市场与首页动态文本（严禁全屏扫描 document.body，仅增量处理脏节点）
+  const EXCLUDE_CHROME_SEL =
+    '[data-testid="autoscroll-viewport"], [contenteditable="true"], .monaco-editor, .xterm, pre, code, svg, #ag-live-metrics-pill, #ag-live-metrics-tooltip, [data-testid="conversation-row-sidebar"] a[href^="/c/"]';
 
-    if (curHref !== lastHref || !pill || !btn || metricsMismatch) {
-      lastHref = curHref;
-      if (metricsMismatch && typeof window.__agRequestMetrics === 'function') {
-        window.__ag_watched_cascade_id = '';
-      }
-      if (typeof window.__ag_check_route_fn === 'function') {
-        window.__ag_check_route_fn();
-      }
-      if (typeof updateAutoCompactBadge === 'function') {
-        try {
-          updateAutoCompactBadge(window.__ag_last_metrics || null);
-        } catch (e) {}
-      }
-    }
-    const runIdleTasks = () => {
-      autoLocalizeActiveConvTitle();
-      localizeDynamicChromeStrings();
-    };
-    if (typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(runIdleTasks, { timeout: 1500 });
-    } else {
-      runIdleTasks();
-    }
-  }, 2500);
-
-  // 4.5 轻量汉化外框、设置弹窗、插件市场与首页动态文本（绝不扫描对话消息区 autoscroll-viewport 与代码编辑器）
   const RE_UPDATED_AT = /^Updated\s+(.+)$/;
   const RE_MODIFIED_IN = /^Modified in\s+(.+)$/;
   const RE_N_PROJECTS = /^(\d+)\s+projects?$/i;
+  const RE_N_MODELS_SELECTED = /^(\d+)\s+models\s+selected$/i;
   const RE_SEE_N_MORE = /^See\s+(\d+)\s+more(?:\s+.*)?$/i;
   const RE_GREET_HEY = /^Hey\s+(.+?),\s*what should we build today\?$/i;
   const RE_GREET_WELCOME = /^Welcome back,\s*(.+?)\.\s*Where should we pick up\?$/i;
@@ -185,8 +145,39 @@
   const RE_TODAY_TIME = /\(Today\s+([^)]+)\)/g;
   const RE_YESTERDAY_TIME = /\(Yesterday\s+([^)]+)\)/g;
   const RE_TRAJECTORY_ID = /^Trajectory ID:\s*(.+)$/;
+  const RE_WINDOW_LIMIT = /^(\d+)([smhd])\s+limit$/i;
+  const RE_QUOTA_RESETS = /^(?:(Daily limit|Weekly limit|\d+[smhd]\s+limit),\s*)?[Rr]esets in\s+(.+)$/;
+  const RE_MODELS_IN_GROUP = /^Models within this group:\s*(.+)$/;
+  const RE_AVAIL_CREDITS = /^Available AI Credits:\s*(.+)$/;
+  const RE_EFFORT_CTX = /^(Low|Medium|High|Extra|Max)(\s*·\s*.+)$/;
+  const EFFORT_ZH_MAP = { Low: '低', Medium: '中', High: '高', Extra: '超高', Max: '极高' };
+  const UNIT_ZH_MAP = { s: '秒', m: '分钟', h: '小时', d: '天' };
   const DISCLAIMER_ZH =
     'Google 不控制第三方开发者工具的可用性或功能。您通过连接到 Antigravity 实例的第三方开发者工具产生的数据可能会与 Google 共享。Google 将严格按照《Google 隐私权政策》保护此类数据，详情请参阅： ';
+
+  function formatResetSpanZh(spanRaw) {
+    const t = spanRaw.trim();
+    if (t === '<1m') return '即将重置（<1 分钟）';
+    return (
+      t
+        .replace(/(\d+)d\b/g, '$1 天')
+        .replace(/(\d+)h\b/g, '$1 小时')
+        .replace(/(\d+)m\b/g, '$1 分钟')
+        .replace(/(\d+)s\b/g, '$1 秒')
+        .replace(/\s+/g, ' ')
+        .trim() + '后重置'
+    );
+  }
+
+  function formatLimitPrefixZh(prefixRaw) {
+    if (!prefixRaw) return '';
+    const p = prefixRaw.trim();
+    if (/^Daily limit$/i.test(p)) return '每日限额';
+    if (/^Weekly limit$/i.test(p)) return '每周限额';
+    const m = p.match(RE_WINDOW_LIMIT);
+    if (m) return `${m[1]} ${UNIT_ZH_MAP[m[2].toLowerCase()] || m[2]}限额`;
+    return p;
+  }
 
   function translateDynamicString(raw, dict) {
     if (!raw || raw.length > 420) return null;
@@ -197,6 +188,28 @@
     if (RE_UPDATED_AT.test(s)) return raw.replace(RE_UPDATED_AT, '更新于 $1');
     if (RE_MODIFIED_IN.test(s)) return raw.replace(RE_MODIFIED_IN, '修改自项目：$1');
     if (RE_N_PROJECTS.test(s)) return raw.replace(RE_N_PROJECTS, '$1 个项目');
+    if (RE_N_MODELS_SELECTED.test(s)) return raw.replace(RE_N_MODELS_SELECTED, '已选择 $1 个模型');
+    const mWin = s.match(RE_WINDOW_LIMIT);
+    if (mWin) return raw.replace(s, `${mWin[1]} ${UNIT_ZH_MAP[mWin[2].toLowerCase()] || mWin[2]}限额`);
+    const mReset = s.match(RE_QUOTA_RESETS);
+    if (mReset) {
+      const prefixZh = formatLimitPrefixZh(mReset[1]);
+      const spanZh = formatResetSpanZh(mReset[2]);
+      return raw.replace(s, prefixZh ? `${prefixZh} · ${spanZh}` : spanZh);
+    }
+    const mGroup = s.match(RE_MODELS_IN_GROUP);
+    if (mGroup) {
+      const listZh = mGroup[1]
+        .split(/,\s*/)
+        .map((name) => dict[name.trim()] || name.trim())
+        .join('、');
+      return raw.replace(s, `此分组包含的模型：${listZh}`);
+    }
+    if (RE_AVAIL_CREDITS.test(s)) return raw.replace(RE_AVAIL_CREDITS, '可用 AI 点数：$1');
+    const mEff = s.match(RE_EFFORT_CTX);
+    if (mEff && EFFORT_ZH_MAP[mEff[1]]) {
+      return raw.replace(s, EFFORT_ZH_MAP[mEff[1]] + mEff[2]);
+    }
     if (RE_GREET_GOOD.test(s)) return raw.replace(RE_GREET_GOOD, '很高兴见到您，$1。接下来做点什么？');
     if (RE_GREET_WELCOME.test(s)) return raw.replace(RE_GREET_WELCOME, '欢迎回来，$1。我们接着做哪部分？');
     if (RE_GREET_HEY.test(s)) return raw.replace(RE_GREET_HEY, '嗨，$1，今天想构建点什么？');
@@ -209,27 +222,68 @@
     return null;
   }
 
+  function localizeElementButtonAttrs(el, dict) {
+    for (const attr of ['placeholder', 'title', 'aria-label']) {
+      const val = el.getAttribute(attr);
+      if (!val || !/[A-Za-z]/.test(val)) continue;
+      const trimmed = val.trim();
+      let next = null;
+      if (dict[trimmed]) {
+        next = dict[trimmed];
+      } else if (RE_SEE_N_MORE.test(trimmed)) {
+        next = trimmed.replace(RE_SEE_N_MORE, '展开其余 $1 项');
+      } else if (trimmed.startsWith('Select model, current: ')) {
+        let curModelStr = trimmed.slice(23).trim();
+        if (dict[curModelStr]) {
+          curModelStr = dict[curModelStr];
+        } else {
+          curModelStr = curModelStr.replace(/\b(Low|Medium|High|Extra|Max)\b$/, (m) => EFFORT_ZH_MAP[m] || m);
+        }
+        next = '选择模型（当前：' + curModelStr + '）';
+      } else if (trimmed.startsWith('Close ')) {
+        next = '关闭 ' + trimmed.slice(6).replace(RE_TODAY_TIME, '（今天 $1）');
+      }
+      if (next && next !== val) {
+        el.setAttribute(attr, next);
+      }
+    }
+  }
+
   function localizeDynamicChromeStrings(rootNode) {
     try {
       const dict = window.__ag_i18n_dict || {};
-      const root = rootNode && rootNode.nodeType === 1 ? rootNode : document.body;
-      if (!root) return;
-      if (root.closest && root.closest('[data-testid="autoscroll-viewport"], [contenteditable="true"], .monaco-editor, pre, code')) {
+      if (!rootNode) return;
+
+      // 单文本节点 O(1) 极速路径
+      if (rootNode.nodeType === 3) {
+        const p = rootNode.parentElement;
+        if (!p || p.closest(EXCLUDE_CHROME_SEL)) return;
+        const next = translateDynamicString(rootNode.nodeValue, dict);
+        if (next && next !== rootNode.nodeValue) {
+          rootNode.nodeValue = next;
+        }
         return;
       }
 
+      if (rootNode.nodeType !== 1) return;
+      if (rootNode.closest && rootNode.closest(EXCLUDE_CHROME_SEL)) return;
+
+      if (rootNode.matches && rootNode.matches('button[aria-label], button[title], input[placeholder]')) {
+        localizeElementButtonAttrs(rootNode, dict);
+      }
+
       const walker = document.createTreeWalker(
-        root,
+        rootNode,
         NodeFilter.SHOW_TEXT,
         {
           acceptNode(node) {
             const p = node.parentElement;
             if (!p) return NodeFilter.FILTER_REJECT;
             const tag = p.tagName;
-            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'CODE' || tag === 'PRE' || tag === 'TEXTAREA') {
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'CODE' || tag === 'PRE' || tag === 'TEXTAREA' || tag === 'SVG') {
               return NodeFilter.FILTER_REJECT;
             }
-            if (p.closest('[data-testid="autoscroll-viewport"], [contenteditable="true"], .monaco-editor, #ag-live-metrics-pill')) {
+            if (p.closest(EXCLUDE_CHROME_SEL)) {
               return NodeFilter.FILTER_REJECT;
             }
             return NodeFilter.FILTER_ACCEPT;
@@ -245,27 +299,13 @@
         }
       }
 
-      // 2) 汉化外框按钮的 placeholder / title / aria-label 悬停提示
-      const attrEls = root.querySelectorAll
-        ? root.querySelectorAll('button[aria-label], button[title], input[placeholder]')
+      const attrEls = rootNode.querySelectorAll
+        ? rootNode.querySelectorAll('button[aria-label], button[title], input[placeholder]')
         : [];
       for (let j = 0; j < attrEls.length; j++) {
         const el = attrEls[j];
-        if (el.closest('[data-testid="autoscroll-viewport"]')) continue;
-        for (const attr of ['placeholder', 'title', 'aria-label']) {
-          const val = el.getAttribute(attr);
-          if (!val) continue;
-          const trimmed = val.trim();
-          if (dict[trimmed]) {
-            el.setAttribute(attr, dict[trimmed]);
-          } else if (RE_SEE_N_MORE.test(trimmed)) {
-            el.setAttribute(attr, trimmed.replace(RE_SEE_N_MORE, '展开其余 $1 项'));
-          } else if (trimmed.startsWith('Select model, current: ')) {
-            el.setAttribute(attr, '选择模型（当前：' + trimmed.slice(23) + '）');
-          } else if (trimmed.startsWith('Close ')) {
-            el.setAttribute(attr, '关闭 ' + trimmed.slice(6).replace(RE_TODAY_TIME, '（今天 $1）'));
-          }
-        }
+        if (el.closest(EXCLUDE_CHROME_SEL)) continue;
+        localizeElementButtonAttrs(el, dict);
       }
     } catch (e) {}
   }
@@ -276,31 +316,111 @@
     } catch (e) {}
     window.__ag_dyn_chrome_observer = null;
   }
+
+  const dynDirtyNodes = new Set();
   let dynRafPending = false;
-  window.__ag_dyn_chrome_observer = new MutationObserver((mutations) => {
-    if (dynRafPending) return;
-    let hasRelevant = false;
-    for (let i = 0; i < mutations.length; i++) {
-      const t = mutations[i].target;
-      const el = t && t.nodeType === 1 ? t : t ? t.parentElement : null;
-      if (el && !el.closest('[data-testid="autoscroll-viewport"], [contenteditable="true"], .monaco-editor, #ag-live-metrics-pill, #ag-live-metrics-tooltip')) {
-        hasRelevant = true;
-        break;
+
+  function flushDynChromeNodes() {
+    dynRafPending = false;
+    if (dynDirtyNodes.size === 0) return;
+    const batch = Array.from(dynDirtyNodes);
+    dynDirtyNodes.clear();
+
+    for (let i = 0; i < batch.length; i++) {
+      const node = batch[i];
+      if (!node || !node.isConnected) continue;
+      // 跳过已被同批次祖先元素覆盖的子节点
+      if (node.nodeType === 1 || node.nodeType === 3) {
+        let covered = false;
+        for (let p = node.parentNode; p && p !== document.body; p = p.parentNode) {
+          if (batch.includes(p)) {
+            covered = true;
+            break;
+          }
+        }
+        if (!covered) {
+          localizeDynamicChromeStrings(node);
+        }
       }
     }
-    if (!hasRelevant) return;
-    dynRafPending = true;
-    requestAnimationFrame(() => {
-      dynRafPending = false;
-      localizeDynamicChromeStrings(document.body);
-    });
+  }
+
+  window.__ag_dyn_chrome_observer = new MutationObserver((mutations) => {
+    for (let i = 0; i < mutations.length; i++) {
+      const m = mutations[i];
+      if (m.type === 'characterData') {
+        const t = m.target;
+        if (t && t.parentElement && !t.parentElement.closest(EXCLUDE_CHROME_SEL)) {
+          dynDirtyNodes.add(t);
+        }
+      } else if (m.type === 'childList' && m.addedNodes.length > 0) {
+        const targetEl = m.target && m.target.nodeType === 1 ? m.target : null;
+        if (targetEl && targetEl.closest(EXCLUDE_CHROME_SEL)) continue;
+        for (let j = 0; j < m.addedNodes.length; j++) {
+          const n = m.addedNodes[j];
+          if (n.nodeType === 1 || n.nodeType === 3) {
+            dynDirtyNodes.add(n);
+          }
+        }
+      }
+    }
+    if (dynDirtyNodes.size > 0 && !dynRafPending) {
+      dynRafPending = true;
+      requestAnimationFrame(flushDynChromeNodes);
+    }
   });
+
   if (document.body) {
     window.__ag_dyn_chrome_observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   }
-  setTimeout(() => localizeDynamicChromeStrings(document.body), 250);
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(() => localizeDynamicChromeStrings(document.body), { timeout: 1000 });
+  } else {
+    setTimeout(() => localizeDynamicChromeStrings(document.body), 250);
+  }
 
-  // 5. 当新建对话被后端自动生成英文标题时，若用户首条提问包含中文，自动将其重命名为中文标题（兼容 v2.31.0+ annotations.title 与旧版 updateOptimisticSummary）
+  // 4.5 优化路由与指标自愈巡检：平时 0 DOM 扫描，仅在路由切换时触发标题检测
+  if (window.__ag_metrics_route_watcher) {
+    try {
+      clearInterval(window.__ag_metrics_route_watcher);
+    } catch (e) {}
+    window.__ag_metrics_route_watcher = null;
+  }
+  let lastHref = '';
+  window.__ag_metrics_route_watcher = setInterval(() => {
+    if (document.hidden) return;
+    const curHref = window.location.href;
+    const routeChanged = curHref !== lastHref;
+    const pill = document.getElementById('ag-live-metrics-pill');
+    const btn = document.getElementById('ag-auto-compact-btn');
+    const cidMatch = window.location.pathname.match(/\/c\/([0-9a-f-]{36})/i);
+    const curCid = cidMatch ? cidMatch[1] : '';
+    const metricsMismatch = !!(curCid && (!window.__ag_last_metrics || window.__ag_last_metrics.cascadeId !== curCid));
+
+    if (routeChanged || !pill || !btn || metricsMismatch) {
+      lastHref = curHref;
+      if (metricsMismatch && typeof window.__agRequestMetrics === 'function') {
+        window.__ag_watched_cascade_id = '';
+      }
+      if (typeof window.__ag_check_route_fn === 'function') {
+        window.__ag_check_route_fn();
+      }
+      if (typeof updateAutoCompactBadge === 'function') {
+        try {
+          updateAutoCompactBadge(window.__ag_last_metrics || null);
+        } catch (e) {}
+      }
+      if (routeChanged) {
+        if (typeof window.requestIdleCallback === 'function') {
+          window.requestIdleCallback(() => autoLocalizeActiveConvTitle(), { timeout: 1500 });
+        } else {
+          setTimeout(autoLocalizeActiveConvTitle, 400);
+        }
+      }
+    }
+  }, 3000);
+
+  // 5. 当新建对话被后端自动生成英文标题时，若用户首条提问包含中文，自动将其重命名为中文标题
   const RE_HAS_CJK = /[\u4e00-\u9fa5]/;
   const RE_MIN_3_CJK = /(?:[\u4e00-\u9fa5].*){3,}/;
   const RE_PURE_EN_TITLE = /^[A-Za-z0-9\s\-_.,:()'"/&+#]+$/;
@@ -321,7 +441,6 @@
       )
       .filter((s) => RE_HAS_CJK.test(s));
     if (clauses.length === 0) return '';
-    // 优先选取至少含 3 个汉字的有效主题短语，跳过 "好的"、"16:9的" 等过短附言
     const meaningful = clauses.find((s) => RE_MIN_3_CJK.test(s)) || clauses[0];
     if (!RE_MIN_3_CJK.test(meaningful)) return '';
     return meaningful.length > 18 ? meaningful.slice(0, 18) : meaningful;
