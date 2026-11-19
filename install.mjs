@@ -223,7 +223,7 @@ function ensureArgvRemoteDebugging(channel = 'auto') {
     if (!fs.existsSync(argvDir)) continue;
     try {
       if (!fs.existsSync(argvPath)) {
-        fs.writeFileSync(argvPath, JSON.stringify({ 'remote-debugging-port': 9222 }, null, 2) + '\n', 'utf8');
+        fs.writeFileSync(argvPath, JSON.stringify({ 'remote-debugging-port': 0 }, null, 2) + '\n', 'utf8');
         results.push({ path: argvPath, action: 'created' });
         continue;
       }
@@ -236,7 +236,7 @@ function ensureArgvRemoteDebugging(channel = 'auto') {
       if (lastBrace !== -1) {
         const before = raw.slice(0, lastBrace).trimEnd();
         const needsComma = !before.endsWith('{') && !before.endsWith(',');
-        const patched = `${before}${needsComma ? ',' : ''}\n\t"remote-debugging-port": 9222\n}\n`;
+        const patched = `${before}${needsComma ? ',' : ''}\n\t"remote-debugging-port": 0\n}\n`;
         fs.writeFileSync(argvPath, patched, 'utf8');
         results.push({ path: argvPath, action: 'patched' });
       }
@@ -244,6 +244,32 @@ function ensureArgvRemoteDebugging(channel = 'auto') {
       results.push({ path: argvPath, action: 'skipped', error: e.message });
     }
   }
+
+  // Antigravity v2.33.0+ requires explicit --remote-debugging-port=0 CLI switch (opt-in debug port)
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    const lnkCandidates = [
+      path.join(home, 'Desktop', 'Antigravity.lnk'),
+      path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Antigravity.lnk'),
+      path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Antigravity', 'Antigravity.lnk'),
+      path.join(appData, 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'TaskBar', 'Antigravity.lnk')
+    ];
+    for (const lnk of lnkCandidates) {
+      if (!fs.existsSync(lnk)) continue;
+      try {
+        const escLnk = lnk.replace(/'/g, "''");
+        const psCmd = `$ws = New-Object -ComObject WScript.Shell; $sc = $ws.CreateShortcut('${escLnk}'); if ($sc.TargetPath -match 'Antigravity\\.exe$' -and $sc.Arguments -notmatch '--remote-debugging-port') { $sc.Arguments = ('--remote-debugging-port=0 ' + $sc.Arguments).Trim(); $sc.Save(); Write-Output 'patched' }`;
+        const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', psCmd], {
+          encoding: 'utf8',
+          windowsHide: true
+        });
+        if (String(r.stdout || '').includes('patched')) {
+          results.push({ path: lnk, action: 'shortcut-cdp-enabled' });
+        }
+      } catch {}
+    }
+  }
+
   return results;
 }
 
@@ -701,11 +727,14 @@ async function runInstall() {
   const wrapperDaemon = path.join(scriptsDir, 'antigravity-font-daemon.mjs');
   const realDaemon = path.join(targetCore, 'daemon.mjs');
   const realDaemonUrl = pathToFileURL(realDaemon).href;
-  fs.writeFileSync(
-    wrapperDaemon,
-    `#!/usr/bin/env node\n// Auto-generated wrapper -> ${realDaemon}\nprocess.on('uncaughtException', (err) => { try { console.error('[Daemon] uncaughtException:', err?.message || err); } catch {} });\nprocess.on('unhandledRejection', (err) => { try { console.error('[Daemon] unhandledRejection:', err?.message || err); } catch {} });\nawait import(${JSON.stringify(realDaemonUrl)});\n`,
-    { encoding: 'utf8', mode: 0o755 }
-  );
+  const existingWrapper = fs.existsSync(wrapperDaemon) ? fs.readFileSync(wrapperDaemon, 'utf8') : '';
+  if (!existingWrapper.includes('[SelfHeal]')) {
+    fs.writeFileSync(
+      wrapperDaemon,
+      `#!/usr/bin/env node\n// Auto-generated wrapper -> ${realDaemon}\nprocess.on('uncaughtException', (err) => { try { console.error('[Daemon] uncaughtException:', err?.message || err); } catch {} });\nprocess.on('unhandledRejection', (err) => { try { console.error('[Daemon] unhandledRejection:', err?.message || err); } catch {} });\nawait import(${JSON.stringify(realDaemonUrl)});\n`,
+      { encoding: 'utf8', mode: 0o755 }
+    );
+  }
 
   // 注册/更新跨平台自启服务
   const serviceInfo = registerSystemService(targetDir, wrapperDaemon);

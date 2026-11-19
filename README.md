@@ -6,7 +6,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Version-v1.3.0-D97757?style=flat-square" alt="Version v1.3.0" />
-  <img src="https://img.shields.io/badge/Antigravity-v2.32.1%2B-B43E18?style=flat-square" alt="Antigravity v2.32.1+" />
+  <img src="https://img.shields.io/badge/Antigravity-v2.33.0%2B-B43E18?style=flat-square" alt="Antigravity v2.33.0+" />
   <img src="https://img.shields.io/badge/i18n_Dictionary-2955_Entries-2E6B9E?style=flat-square" alt="2955 Entries" />
   <img src="https://img.shields.io/badge/Core_Integrity-100%25_Clean-2E7D32?style=flat-square" alt="Core Integrity Clean" />
   <img src="https://img.shields.io/badge/License-MIT-7A6A58?style=flat-square" alt="MIT License" />
