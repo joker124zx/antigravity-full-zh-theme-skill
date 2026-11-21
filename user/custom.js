@@ -149,8 +149,8 @@
   const RE_QUOTA_RESETS = /^(?:(Daily limit|Weekly limit|\d+[smhd]\s+limit),\s*)?[Rr]esets in\s+(.+)$/;
   const RE_MODELS_IN_GROUP = /^Models within this group:\s*(.+)$/;
   const RE_AVAIL_CREDITS = /^Available AI Credits:\s*(.+)$/;
-  const RE_EFFORT_CTX = /^(Low|Medium|High|Extra|Max)(\s*·\s*.+)$/;
-  const EFFORT_ZH_MAP = { Low: '低', Medium: '中', High: '高', Extra: '超高', Max: '极高' };
+  const RE_EFFORT_CTX = /^(Low|Medium|High|Extra High|Extra|Max)(\s*·\s*.+)$/;
+  const EFFORT_ZH_MAP = { Low: '低', Medium: '中', High: '高', 'Extra High': '超高', Extra: '超高', Max: '极高' };
   const UNIT_ZH_MAP = { s: '秒', m: '分钟', h: '小时', d: '天' };
   const DISCLAIMER_ZH =
     'Google 不控制第三方开发者工具的可用性或功能。您通过连接到 Antigravity 实例的第三方开发者工具产生的数据可能会与 Google 共享。Google 将严格按照《Google 隐私权政策》保护此类数据，详情请参阅： ';
@@ -237,7 +237,7 @@
         if (dict[curModelStr]) {
           curModelStr = dict[curModelStr];
         } else {
-          curModelStr = curModelStr.replace(/\b(Low|Medium|High|Extra|Max)\b$/, (m) => EFFORT_ZH_MAP[m] || m);
+          curModelStr = curModelStr.replace(/\b(Extra High|Low|Medium|High|Extra|Max)\b$/, (m) => EFFORT_ZH_MAP[m] || m);
         }
         next = '选择模型（当前：' + curModelStr + '）';
       } else if (trimmed.startsWith('Close ')) {
@@ -564,10 +564,33 @@
     } catch (e) {}
   }
 
+  function getComposerController() {
+    try {
+      const footer = document.querySelector('.agy-composer-footer');
+      if (!footer) return null;
+      const fk = Object.keys(footer).find((k) => k.startsWith('__reactFiber'));
+      let f = fk ? footer[fk] : null;
+      while (f && (!f.memoizedProps || !('isRunning' in f.memoizedProps || 'slashCommandItems' in f.memoizedProps))) {
+        f = f.return;
+      }
+      if (!f || !f.memoizedProps) return null;
+      return f.memoizedProps;
+    } catch (e) {
+      return null;
+    }
+  }
+
   function isAgentBusy() {
+    const ctrl = getComposerController();
+    if (ctrl && (ctrl.isRunning || ctrl.isConvoLoading)) return true;
     const box = document.getElementById('antigravity.agentSidePanelInputBox');
     if (document.querySelector('[data-testid="status-loading-spinner"]')) return true;
-    if (box && box.querySelector('[data-testid="stop-button"], [aria-label*="Stop"], [aria-label*="停止"]')) {
+    if (
+      box &&
+      box.querySelector(
+        '[data-testid="input-cancel-button"], [data-testid="stop-button"], [data-testid="send-button-loading"], [data-testid="send-button-pending"], [aria-label*="Cancel"], [aria-label*="取消"], [aria-label*="Stop"], [aria-label*="停止"]'
+      )
+    ) {
       return true;
     }
     return false;
@@ -591,6 +614,19 @@
     return (editor.textContent || '').trim();
   }
 
+  function clearEditorSafely(editor) {
+    if (!editor) return;
+    try {
+      editor.focus();
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand('delete', false, null);
+    } catch (e) {}
+  }
+
   function setEditorTextAndFire(editor, text) {
     editor.focus();
     if (editor.tagName === 'TEXTAREA' || editor.tagName === 'INPUT') {
@@ -606,14 +642,7 @@
       return;
     }
 
-    try {
-      const sel = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      document.execCommand('delete', false, null);
-    } catch (e) {}
+    clearEditorSafely(editor);
 
     let execOk = false;
     try {
@@ -637,6 +666,58 @@
     }
   }
 
+  function trySelectCompactChipFromMentionMenu() {
+    const menu = document.querySelector('[data-mention-menu]');
+    if (!menu) return false;
+    try {
+      const fk = Object.keys(menu).find((k) => k.startsWith('__reactFiber'));
+      let f = fk ? menu[fk] : null;
+      while (f && (!f.memoizedProps || !f.memoizedProps.menuProps)) {
+        f = f.return;
+      }
+      const mp = f?.memoizedProps?.menuProps;
+      if (mp && Array.isArray(mp.options) && typeof mp.selectOptionAndCleanUp === 'function') {
+        const opt = mp.options.find(
+          (o) =>
+            (o?.item?.scopeItem?.case === 'slashCommand' && o?.item?.scopeItem?.value?.info?.name === 'compact') ||
+            o?.value === 'compact'
+        );
+        if (opt) {
+          mp.selectOptionAndCleanUp(opt);
+          return true;
+        }
+      }
+    } catch (e) {}
+
+    // DOM fallback: click option item matching /compact
+    const opts = menu.querySelectorAll('[role="option"], [data-testid*="option"], div.cursor-pointer');
+    for (let i = 0; i < opts.length; i++) {
+      const txt = (opts[i].textContent || '').trim();
+      if (/^\/?compact\b/i.test(txt)) {
+        opts[i].click();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function hasVerifiedCompactChip(box, ctrl) {
+    if (box && box.querySelector('[data-beautiful-mention="/compact"], [data-lexical-beautiful-mention-value="compact"]')) {
+      return true;
+    }
+    try {
+      const lex = ctrl?.lexicalRef?.current;
+      if (lex && typeof lex.getEditorState === 'function') {
+        const json = lex.getEditorState().toJSON();
+        const str = JSON.stringify(json);
+        if (str.includes('"beautifulMention"') && str.includes('"compact"')) {
+          return true;
+        }
+      }
+    } catch (e) {}
+    return false;
+  }
+
   function executeSlashCompact(isManual = false) {
     if (window.__ag_compact_in_flight) return false;
     const box = document.getElementById('antigravity.agentSidePanelInputBox');
@@ -655,36 +736,73 @@
     }
 
     window.__ag_compact_in_flight = true;
-    setTimeout(() => {
+    const releaseLock = () => {
       window.__ag_compact_in_flight = false;
-    }, 3000);
+    };
+    setTimeout(releaseLock, 4000);
 
     showCompactToast(
       isManual
-        ? '⚡ 正在执行 /compact 压缩当前会话上下文...'
-        : `⚡ 上下文已达 ${getAutoCompactThreshold()}% 警戒线，正在自动执行 /compact 防卡死...`,
+        ? '⚡ 正在执行原生 /compact 压缩当前会话上下文...'
+        : `⚡ 上下文已达 ${getAutoCompactThreshold()}% 警戒线，正在自动执行原生 /compact...`,
       false
     );
 
+    // 第 1 步：输入 "/compact" 唤起 Lexical 斜杠命令菜单 [data-mention-menu]
     setEditorTextAndFire(editor, COMPACT_COMMAND);
 
-    setTimeout(() => {
-      const sendBtn = box.querySelector('[data-testid="send-button"]');
-      if (sendBtn && !sendBtn.disabled) {
-        sendBtn.click();
-      } else {
+    // 第 2 步：轮询等待斜杠候选菜单挂载，将其转换为真正的 beautifulMention 斜杠命令芯片
+    let menuAttempts = 0;
+    const waitMenuTimer = setInterval(() => {
+      menuAttempts++;
+      const ctrlNow = getComposerController();
+      if (hasVerifiedCompactChip(box, ctrlNow)) {
+        clearInterval(waitMenuTimer);
+        submitVerifiedChip();
+        return;
+      }
+      if (trySelectCompactChipFromMentionMenu()) {
+        clearInterval(waitMenuTimer);
+        setTimeout(submitVerifiedChip, 80);
+        return;
+      }
+      if (menuAttempts === 5) {
         editor.dispatchEvent(
-          new KeyboardEvent('keydown', {
-            key: 'Enter',
-            code: 'Enter',
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true
-          })
+          new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', keyCode: 9, which: 9, bubbles: true, cancelable: true })
         );
       }
-    }, 120);
+      if (menuAttempts >= 18) {
+        clearInterval(waitMenuTimer);
+        submitVerifiedChip();
+      }
+    }, 45);
+
+    // 第 3 步：硬门禁校验——仅当输入框内已生成真实 /compact 芯片且 Agent 空闲时才提交，绝不误发纯文本 "/compact"
+    function submitVerifiedChip() {
+      const ctrl = getComposerController();
+      if (isAgentBusy()) {
+        clearEditorSafely(editor);
+        releaseLock();
+        return;
+      }
+      if (!hasVerifiedCompactChip(box, ctrl)) {
+        clearEditorSafely(editor);
+        releaseLock();
+        if (isManual) {
+          showCompactToast('⚠️ 斜杠命令芯片未就绪，已取消发送以避免误发纯文本', true);
+        }
+        return;
+      }
+      const lex = ctrl?.lexicalRef?.current;
+      if (ctrl && typeof ctrl.handleSubmit === 'function' && lex) {
+        ctrl.handleSubmit(lex);
+      } else {
+        const sendBtn = box.querySelector('[data-testid="send-button"]');
+        if (sendBtn && !sendBtn.disabled) {
+          sendBtn.click();
+        }
+      }
+    }
 
     return true;
   }
@@ -692,7 +810,20 @@
   window.__ag_trigger_compact = () => executeSlashCompact(true);
 
   function parseCtxPctFromPayload(payload) {
-    if (!payload || typeof payload.inlineHtml !== 'string') return 0;
+    if (!payload) return 0;
+    // 若当前模型为 GPT-OSS (128k)，按实际 Token 数与 128k 计算；其余 Gemini 4 / Claude 5.5 均按 config.json (1M) 百分比读取
+    try {
+      const ctrl = getComposerController();
+      const modelLabel = ctrl?.currentModelConfig?.label || '';
+      if (/GPT-OSS/i.test(modelLabel) && typeof payload.tooltipHtml === 'string') {
+        const mTok = payload.tooltipHtml.match(/当前上下文<\/span><span[^>]*>([\d,]+)/);
+        if (mTok) {
+          const rawTok = parseInt(mTok[1].replace(/,/g, ''), 10);
+          if (rawTok > 0) return Math.round((rawTok / 128000) * 100);
+        }
+      }
+    } catch (e) {}
+    if (typeof payload.inlineHtml !== 'string') return 0;
     const m = payload.inlineHtml.match(/\((\d+)%\)/);
     return m ? parseInt(m[1], 10) : 0;
   }
