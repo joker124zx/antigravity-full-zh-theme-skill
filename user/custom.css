@@ -208,54 +208,350 @@ aside,
   font-variant-numeric: lining-nums !important;
 }
 
-/* 6. 85% 自动压缩防卡死胶囊按钮 (#ag-auto-compact-btn) 与状态横幅 (#ag-compact-toast) */
-#ag-live-metrics-pill #ag-live-metrics-text {
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  min-width: 0 !important;
-  flex: 0 1 auto !important;
+/* 6. 右下角圆环上下文胶囊 (#ag-ctx-ring-pill) + 悬停环形仪表盘卡片 (#ag-ctx-popover-card) + 状态横幅 (#ag-compact-toast) */
+#ag-live-metrics-pill,
+#ag-live-metrics-tooltip {
+  display: none !important;
 }
 
-#ag-auto-compact-btn {
+#ag-ctx-ring-pill {
   display: inline-flex;
   align-items: center;
-  flex-shrink: 0 !important;
-  margin-left: 6px;
-  padding: 1px 6px;
+  justify-content: center;
+  gap: 5px;
+  height: 27px;
+  padding: 0 9px 0 7px;
+  margin: 0 2px;
   border-radius: 999px;
-  font-size: 11px;
+  background: rgba(38, 38, 42, 0.08);
+  border: 1px solid rgba(38, 38, 42, 0.1);
+  color: var(--foreground, #292524);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif !important;
+  font-size: 12.5px;
   font-weight: 600;
-  line-height: 1.35;
+  font-variant-numeric: lining-nums tabular-nums !important;
+  line-height: 1;
   cursor: pointer;
   user-select: none;
+  flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.dark #ag-ctx-ring-pill,
+[data-ag-preset="vintage-deep"] #ag-ctx-ring-pill {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #F4F4F5;
+}
+
+#ag-ctx-ring-pill:hover,
+#ag-ctx-ring-pill[data-open="1"] {
+  background: rgba(38, 38, 42, 0.14);
+  border-color: rgba(38, 38, 42, 0.22);
+}
+
+.dark #ag-ctx-ring-pill:hover,
+.dark #ag-ctx-ring-pill[data-open="1"],
+[data-ag-preset="vintage-deep"] #ag-ctx-ring-pill:hover,
+[data-ag-preset="vintage-deep"] #ag-ctx-ring-pill[data-open="1"] {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+#ag-ctx-ring-pill svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  display: block;
+}
+
+#ag-ctx-popover-card {
+  position: fixed;
+  z-index: 99998;
+  width: 318px;
+  padding: 15px 16px 13px;
+  border-radius: 14px;
+  background: #17181C;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42), 0 2px 8px rgba(0, 0, 0, 0.25);
+  color: #F4F4F5;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif !important;
+  font-variant-numeric: lining-nums tabular-nums !important;
+  opacity: 0;
+  transform: translateY(6px) scale(0.985);
+  pointer-events: none;
+  transition: opacity 0.16s cubic-bezier(0.16, 1, 0.3, 1), transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+#ag-ctx-popover-card[data-visible="1"] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.ag-ctx-card-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 13px;
+}
+
+.ag-ctx-card-hdr-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ag-ctx-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #FAFAFA;
+  letter-spacing: 0.01em;
+}
+
+.ag-ctx-comp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #9CA3AF;
+  cursor: pointer;
+  padding: 1px 5px;
+  border-radius: 5px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.ag-ctx-comp-toggle:hover {
+  color: #E5E7EB;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.ag-ctx-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2.5px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.ag-ctx-status-badge[data-level="ok"] {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ADE80;
+}
+
+.ag-ctx-status-badge[data-level="mid"] {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38BDF8;
+}
+
+.ag-ctx-status-badge[data-level="warn"] {
+  background: rgba(245, 158, 11, 0.18);
+  color: #FBBF24;
+}
+
+.ag-ctx-status-badge[data-level="crit"] {
+  background: rgba(239, 68, 68, 0.2);
+  color: #F87171;
+}
+
+.ag-ctx-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.ag-ctx-gauge-wrap {
+  position: relative;
+  width: 70px;
+  height: 70px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ag-ctx-gauge-wrap svg {
+  width: 70px;
+  height: 70px;
+  display: block;
+}
+
+.ag-ctx-gauge-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.ag-ctx-gauge-pct {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #FAFAFA;
+  line-height: 1.15;
+}
+
+.ag-ctx-gauge-sub {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #9CA3AF;
+  margin-top: 2px;
+}
+
+.ag-ctx-hero-rows {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ag-ctx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+
+.ag-ctx-lbl {
+  color: #9CA3AF;
+  font-weight: 400;
+  flex-shrink: 0;
+}
+
+.ag-ctx-val {
+  color: #F4F4F5;
+  font-weight: 600;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-ctx-limit-click {
+  cursor: pointer;
+  border-bottom: 1px dashed rgba(156, 163, 175, 0.45);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.ag-ctx-limit-click:hover {
+  color: #FBBF24;
+  border-bottom-color: #FBBF24;
+}
+
+.ag-ctx-comp-drawer {
+  display: none;
+  margin: 2px 0 12px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.ag-ctx-comp-drawer[data-open="1"] {
+  display: block;
+}
+
+.ag-ctx-comp-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+  gap: 1px;
+}
+
+.ag-ctx-comp-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ag-ctx-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.ag-ctx-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 11px 0;
+}
+
+.ag-ctx-meta-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 7.5px;
+}
+
+.ag-ctx-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ag-ctx-act-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
   transition: all 0.15s ease;
-  background: rgba(180, 83, 9, 0.1);
-  border: 1px solid rgba(180, 83, 9, 0.28);
-  color: #92400E;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #FBBF24;
 }
 
-#ag-auto-compact-btn:hover {
-  background: rgba(180, 83, 9, 0.2);
-  border-color: rgba(180, 83, 9, 0.55);
-  color: #78350F;
+.ag-ctx-act-btn:hover {
+  background: rgba(245, 158, 11, 0.26);
+  border-color: rgba(245, 158, 11, 0.6);
 }
 
-#ag-auto-compact-btn[data-enabled="0"] {
-  background: rgba(120, 113, 108, 0.1);
-  border-color: rgba(120, 113, 108, 0.25);
-  color: #78716C;
+.ag-ctx-auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #D4D4D8;
+  transition: all 0.15s ease;
 }
 
-#ag-auto-compact-btn[data-high="1"] {
-  background: rgba(217, 119, 6, 0.18);
-  border-color: rgba(217, 119, 6, 0.55);
-  color: #B45309;
+.ag-ctx-auto-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
-#ag-auto-compact-btn[data-high="2"] {
-  background: rgba(220, 38, 38, 0.16);
-  border-color: rgba(220, 38, 38, 0.55);
-  color: #B91C1C;
+.ag-ctx-auto-toggle[data-on="1"] {
+  color: #4ADE80;
+  border-color: rgba(74, 222, 128, 0.3);
+  background: rgba(34, 197, 94, 0.1);
 }
 
 #ag-compact-toast {

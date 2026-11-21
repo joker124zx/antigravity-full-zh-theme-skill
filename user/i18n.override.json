@@ -2675,5 +2675,12 @@
   "Use Google Cloud project instead": "改用 Google Cloud 项目关联",
   "Google Cloud MCP Server Error": "Google Cloud MCP 服务器连接异常",
   "Opens the New Conversation screen for this project": "打开此项目的新建对话页面",
-  "Opens the New Conversation screen for this workspace": "打开此工作区的新建对话页面"
+  "Opens the New Conversation screen for this workspace": "打开此工作区的新建对话页面",
+  "All-in-one Antigravity latency accelerator, KV-cache protector & context-window guard: batched code search/edits/outlines/checks, transparent CLI & JSON crushing, unified config, heading-aware SQLite FTS5, and a CSRF-hardened live Sidecar dashboard.": "面向 Antigravity 的一体化极速批处理、KV 缓存保护与上下文护栏插件：提供并发搜索/批量编辑/大纲提取、透明 CLI 与 JSON 降噪、标题感知 SQLite FTS5 检索及实时监控侧边栏面板。",
+  "Workflow playbook for agy-dart dual-engine acceleration, transparent CLI filtering, KV-cache diagnostics, read deduplication, and SQLite FTS5 context protection.": "agy-dart 双引擎极速批处理、透明 CLI 输出降噪、KV 缓存诊断、重复读取去重与 SQLite FTS5 上下文护栏实战指南。",
+  "agy-dart Context": "agy-dart 上下文护栏",
+  "Live context window savings, token reduction telemetry, cutoff control, and SQLite FTS5 search inspector for agy-dart.": "实时查看 agy-dart 上下文节省量、Token 降噪统计、拦截阈值切换与 SQLite FTS5 检索索引面板。",
+  "Search symbols across the codebase, outline large files, and apply multi-file edits with inline verification": "跨代码库并发检索符号、提取大文件大纲并执行带内联校验的多文件原子编辑",
+  "Analyze a large build or server log in the sandbox and summarize only the root causes": "在本地沙盒中分析超大构建或服务日志，仅提炼核心报错根因返回对话",
+  "Show agy-dart context savings report and verify plugin health": "查看 agy-dart 上下文节省统计报告并执行插件健康自检"
 }

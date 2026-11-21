@@ -132,7 +132,7 @@
 
   // 4. 增量汉化外框、设置弹窗、插件市场与首页动态文本（严禁全屏扫描 document.body，仅增量处理脏节点）
   const EXCLUDE_CHROME_SEL =
-    '[data-testid="autoscroll-viewport"], [contenteditable="true"], .monaco-editor, .xterm, pre, code, svg, #ag-live-metrics-pill, #ag-live-metrics-tooltip, [data-testid="conversation-row-sidebar"] a[href^="/c/"]';
+    '[data-testid="autoscroll-viewport"], [contenteditable="true"], .monaco-editor, .xterm, pre, code, svg, #ag-live-metrics-pill, #ag-live-metrics-tooltip, #ag-ctx-ring-pill, #ag-ctx-popover-card, [data-testid="conversation-row-sidebar"] a[href^="/c/"]';
 
   const RE_UPDATED_AT = /^Updated\s+(.+)$/;
   const RE_MODIFIED_IN = /^Modified in\s+(.+)$/;
@@ -393,7 +393,7 @@
     const curHref = window.location.href;
     const routeChanged = curHref !== lastHref;
     const pill = document.getElementById('ag-live-metrics-pill');
-    const btn = document.getElementById('ag-auto-compact-btn');
+    const btn = document.getElementById('ag-ctx-ring-pill');
     const cidMatch = window.location.pathname.match(/\/c\/([0-9a-f-]{36})/i);
     const curCid = cidMatch ? cidMatch[1] : '';
     const metricsMismatch = !!(curCid && (!window.__ag_last_metrics || window.__ag_last_metrics.cascadeId !== curCid));
@@ -599,7 +599,7 @@
   // ============================================================================
   // 6. 上下文 85% 自动压缩防卡死守卫（Auto-Compact Guard + 底部胶囊一键压缩按钮）
   // ============================================================================
-  const AUTO_COMPACT_KEY = 'ag-auto-compact-enabled';
+  const AUTO_COMPACT_KEY = 'ag-auto-compact-v2-enabled';
   const AUTO_COMPACT_THRESHOLD_KEY = 'ag-auto-compact-threshold';
   const COMPACT_COMMAND = '/compact';
   const compactCooldownMap = window.__ag_compact_cooldown || (window.__ag_compact_cooldown = new Map());
@@ -615,9 +615,9 @@
   function isAutoCompactEnabled() {
     try {
       const v = localStorage.getItem(AUTO_COMPACT_KEY);
-      return v === null ? true : v !== 'false';
+      return v === 'true';
     } catch (e) {
-      return true;
+      return false;
     }
   }
 
@@ -899,93 +899,416 @@
 
   window.__ag_trigger_compact = () => executeSlashCompact(true);
 
-  function parseCtxPctFromPayload(payload) {
-    if (!payload) return 0;
-    // 若当前模型为 GPT-OSS (128k)，按实际 Token 数与 128k 计算；其余 Gemini 4 / Claude 5.5 均按 config.json (1M) 百分比读取
+  const CTX_WINDOW_LIMIT_KEY = 'ag-ctx-window-limit';
+  const CTX_LIMIT_PRESETS = [512000, 1000000, 256000];
+  const avgTpsTracker = window.__ag_avg_tps_map || (window.__ag_avg_tps_map = new Map());
+
+  // 清理热重载旧节点
+  const oldRingPill = document.getElementById('ag-ctx-ring-pill');
+  if (oldRingPill) oldRingPill.remove();
+  const oldPopCard = document.getElementById('ag-ctx-popover-card');
+  if (oldPopCard) oldPopCard.remove();
+
+  function getCustomWindowLimit(modelLabel = '') {
+    if (/GPT-OSS/i.test(modelLabel)) return 128000;
     try {
-      const ctrl = getComposerController();
-      const modelLabel = ctrl?.currentModelConfig?.label || '';
-      if (/GPT-OSS/i.test(modelLabel) && typeof payload.tooltipHtml === 'string') {
-        const mTok = payload.tooltipHtml.match(/当前上下文<\/span><span[^>]*>([\d,]+)/);
-        if (mTok) {
-          const rawTok = parseInt(mTok[1].replace(/,/g, ''), 10);
-          if (rawTok > 0) return Math.round((rawTok / 128000) * 100);
-        }
-      }
+      const saved = parseInt(localStorage.getItem(CTX_WINDOW_LIMIT_KEY) || '512000', 10);
+      if (CTX_LIMIT_PRESETS.includes(saved)) return saved;
     } catch (e) {}
-    if (typeof payload.inlineHtml !== 'string') return 0;
-    const m = payload.inlineHtml.match(/\((\d+)%\)/);
-    return m ? parseInt(m[1], 10) : 0;
+    return 512000;
   }
 
-  function findComposerFooterLeftGroup() {
+  function cycleWindowLimit() {
+    try {
+      const cur = getCustomWindowLimit('');
+      const idx = CTX_LIMIT_PRESETS.indexOf(cur);
+      const next = CTX_LIMIT_PRESETS[(idx + 1) % CTX_LIMIT_PRESETS.length];
+      localStorage.setItem(CTX_WINDOW_LIMIT_KEY, String(next));
+      updateAutoCompactBadge(window.__ag_last_metrics || null);
+    } catch (e) {}
+  }
+
+  function formatTokCompactUpper(n) {
+    if (!n || n <= 0) return '0';
+    if (n >= 1000000) return (n / 1000000).toFixed(2).replace(/\.00$/, '') + 'M';
+    if (n >= 1000) {
+      const k = n / 1000;
+      return (k >= 100 ? k.toFixed(1).replace(/\.0$/, '') : k.toFixed(1).replace(/\.0$/, '')) + 'K';
+    }
+    return String(n);
+  }
+
+  function formatLimitLabel(limit) {
+    if (limit >= 1000000) return (limit / 1000000).toFixed(0) + 'M';
+    return Math.round(limit / 1000) + 'K';
+  }
+
+  function extractRichMetrics(payload) {
+    const ctrl = getComposerController();
+    const modelLabel = ctrl?.currentModelConfig?.label || 'Gemini 4';
+    const windowLimit = getCustomWindowLimit(modelLabel);
+
+    if (!payload || !payload.hasData || typeof payload.tooltipHtml !== 'string') {
+      return {
+        hasData: false,
+        usedTokens: 0,
+        remainTokens: windowLimit,
+        windowLimit,
+        pctExact: 0,
+        pctInt: 0,
+        newInTokens: 0,
+        lastCacheTokens: 0,
+        lastCachePct: '0.0',
+        outTokens: 0,
+        thinkTokens: 0,
+        respTokens: 0,
+        tps: 0,
+        avgTps: 0,
+        sessionCachePct: '0.0',
+        sessionCacheStr: '0',
+        modelLabel
+      };
+    }
+
+    const tt = payload.tooltipHtml;
+    let usedTokens = 0;
+    let newInTokens = 0;
+    let lastCacheTokens = 0;
+    let lastCachePct = '0.0';
+    const mCtx = tt.match(/当前上下文<\/span><span[^>]*>([\d,]+)\s*\(新增\s*([\d,]+)\s*\+\s*缓存\s*([\d,]+),\s*([\d.]+)%\)/);
+    if (mCtx) {
+      usedTokens = parseInt(mCtx[1].replace(/,/g, ''), 10) || 0;
+      newInTokens = parseInt(mCtx[2].replace(/,/g, ''), 10) || 0;
+      lastCacheTokens = parseInt(mCtx[3].replace(/,/g, ''), 10) || 0;
+      lastCachePct = mCtx[4] || '0.0';
+    }
+
+    let outTokens = 0;
+    let thinkTokens = 0;
+    let respTokens = 0;
+    const mOut = tt.match(/本步输出量<\/span><span[^>]*>([\d,]+)\s*\(思考链\s*([\d,]+)\s*\+\s*正文\/工具\s*([\d,]+)\)/);
+    if (mOut) {
+      outTokens = parseInt(mOut[1].replace(/,/g, ''), 10) || 0;
+      thinkTokens = parseInt(mOut[2].replace(/,/g, ''), 10) || 0;
+      respTokens = parseInt(mOut[3].replace(/,/g, ''), 10) || 0;
+    }
+
+    let tps = 0;
+    const mSpd = tt.match(/生成速度<\/span><span[^>]*>(?:流式\s*([\d.]+)\s*tok\/s\s*\|\s*)?端到端\s*([\d.]+)\s*tok\/s/);
+    if (mSpd) {
+      tps = parseFloat(mSpd[1] || mSpd[2] || '0') || 0;
+    }
+
+    let avgTps = Math.round(tps);
+    if (payload.cascadeId && tps > 0) {
+      let rec = avgTpsTracker.get(payload.cascadeId);
+      if (!rec) {
+        rec = { lastSig: '', sum: 0, count: 0 };
+        avgTpsTracker.set(payload.cascadeId, rec);
+      }
+      if (rec.lastSig !== payload.sig) {
+        rec.lastSig = payload.sig;
+        rec.sum += tps;
+        rec.count += 1;
+      }
+      if (rec.count > 0) avgTps = Math.round(rec.sum / rec.count);
+    }
+
+    let sessionCachePct = '0.0';
+    let sessionCacheStr = '0';
+    const mCum = tt.match(/累计输入量<\/span><span[^>]*>新增\s*([\d.]+[kKmM]?)\s*\+\s*缓存读取\s*([\d.]+[kKmM]?)\s*\(命中率\s*([\d.]+)%\)/);
+    if (mCum) {
+      sessionCacheStr = (mCum[2] || '0').toUpperCase();
+      sessionCachePct = mCum[3] || '0.0';
+    }
+
+    const remainTokens = Math.max(0, windowLimit - usedTokens);
+    const pctExact = windowLimit > 0 ? Math.min(999.9, (usedTokens / windowLimit) * 100) : 0;
+    const pctInt = Math.round(pctExact);
+
+    return {
+      hasData: true,
+      usedTokens,
+      remainTokens,
+      windowLimit,
+      pctExact,
+      pctInt,
+      newInTokens,
+      lastCacheTokens,
+      lastCachePct,
+      outTokens,
+      thinkTokens,
+      respTokens,
+      tps,
+      avgTps,
+      sessionCachePct,
+      sessionCacheStr,
+      modelLabel
+    };
+  }
+
+  function getGaugeVisualStatus(pct) {
+    if (pct >= 92) return { color: '#EF4444', level: 'crit', text: '即将耗尽' };
+    if (pct >= 75) return { color: '#F59E0B', level: 'warn', text: '占用偏高' };
+    if (pct >= 45) return { color: '#38BDF8', level: 'mid', text: '占用适中' };
+    return { color: '#22C55E', level: 'ok', text: '空间充裕' };
+  }
+
+  function buildMiniRingSvg(pct, strokeColor) {
+    const clamped = Math.max(0, Math.min(100, pct));
+    const r = 5.6;
+    const circ = 2 * Math.PI * r;
+    const arcMax = circ * 0.75; // 270° 开口圆弧
+    const arcFill = (clamped / 100) * arcMax;
+    return `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="${r}" stroke="currentColor" stroke-opacity="0.2" stroke-width="2" stroke-dasharray="${arcMax.toFixed(2)} ${circ.toFixed(2)}" stroke-linecap="round" transform="rotate(135 8 8)"/>
+      <circle cx="8" cy="8" r="${r}" stroke="${strokeColor}" stroke-width="2" stroke-dasharray="${arcFill.toFixed(2)} ${circ.toFixed(2)}" stroke-linecap="round" transform="rotate(135 8 8)"/>
+      <circle cx="8" cy="8" r="1.45" fill="${strokeColor}"/>
+    </svg>`;
+  }
+
+  function buildHeroGaugeSvg(pct, strokeColor) {
+    const clamped = Math.max(0, Math.min(100, pct));
+    const r = 28;
+    const circ = 2 * Math.PI * r;
+    const arcMax = circ * 0.75; // 270° 仪表盘弧度
+    const arcFill = (clamped / 100) * arcMax;
+    return `<svg viewBox="0 0 70 70" fill="none" aria-hidden="true">
+      <circle cx="35" cy="35" r="${r}" stroke="rgba(255,255,255,0.12)" stroke-width="5.5" stroke-dasharray="${arcMax.toFixed(2)} ${circ.toFixed(2)}" stroke-linecap="round" transform="rotate(135 35 35)"/>
+      <circle cx="35" cy="35" r="${r}" stroke="${strokeColor}" stroke-width="5.5" stroke-dasharray="${arcFill.toFixed(2)} ${circ.toFixed(2)}" stroke-linecap="round" transform="rotate(135 35 35)"/>
+    </svg>`;
+  }
+
+  let popHideTimer = null;
+  let compDrawerOpen = false;
+
+  function ensureCtxPopoverCard() {
+    let card = document.getElementById('ag-ctx-popover-card');
+    if (!card && document.body) {
+      card = document.createElement('div');
+      card.id = 'ag-ctx-popover-card';
+      document.body.appendChild(card);
+
+      card.addEventListener('mouseenter', () => {
+        if (popHideTimer) {
+          clearTimeout(popHideTimer);
+          popHideTimer = null;
+        }
+      });
+      card.addEventListener('mouseleave', () => {
+        scheduleHidePopover();
+      });
+      card.addEventListener('click', (e) => {
+        const t = e.target;
+        if (!t || !t.closest) return;
+        if (t.closest('[data-ag-act="toggle-comp"]')) {
+          e.stopPropagation();
+          compDrawerOpen = !compDrawerOpen;
+          renderPopoverContent(card, window.__ag_last_rich_metrics);
+        } else if (t.closest('[data-ag-act="cycle-limit"]')) {
+          e.stopPropagation();
+          cycleWindowLimit();
+        } else if (t.closest('[data-ag-act="run-compact"]')) {
+          e.stopPropagation();
+          hidePopoverNow();
+          executeSlashCompact(true);
+        } else if (t.closest('[data-ag-act="toggle-auto"]')) {
+          e.stopPropagation();
+          const next = !isAutoCompactEnabled();
+          setAutoCompactEnabled(next);
+          updateAutoCompactBadge(window.__ag_last_metrics || null);
+          showCompactToast(
+            next
+              ? `✅ 已开启 ${getAutoCompactThreshold()}% 自动压缩上下文守卫`
+              : '⏸️ 已关闭自动压缩守卫',
+            !next
+          );
+        }
+      });
+    }
+    return card;
+  }
+
+  function showPopoverForPill(pill) {
+    if (popHideTimer) {
+      clearTimeout(popHideTimer);
+      popHideTimer = null;
+    }
+    const card = ensureCtxPopoverCard();
+    if (!card || !pill) return;
+    renderPopoverContent(card, window.__ag_last_rich_metrics);
+    const r = pill.getBoundingClientRect();
+    const cardW = 318;
+    const left = Math.max(12, Math.min(r.right - cardW + 24, window.innerWidth - cardW - 14));
+    const bottomPx = Math.max(12, window.innerHeight - r.top + 10);
+    card.style.left = `${left}px`;
+    card.style.bottom = `${bottomPx}px`;
+    card.setAttribute('data-visible', '1');
+    pill.setAttribute('data-open', '1');
+  }
+
+  function hidePopoverNow() {
+    if (popHideTimer) {
+      clearTimeout(popHideTimer);
+      popHideTimer = null;
+    }
+    const card = document.getElementById('ag-ctx-popover-card');
+    if (card) card.removeAttribute('data-visible');
+    const pill = document.getElementById('ag-ctx-ring-pill');
+    if (pill) pill.removeAttribute('data-open');
+  }
+
+  function scheduleHidePopover() {
+    if (popHideTimer) clearTimeout(popHideTimer);
+    popHideTimer = setTimeout(hidePopoverNow, 180);
+  }
+
+  function renderPopoverContent(card, m) {
+    if (!card || !m) return;
+    const st = getGaugeVisualStatus(m.pctExact);
+    const pctText = m.hasData ? `${m.pctExact.toFixed(1)}%` : '0.0%';
+    const enabled = isAutoCompactEnabled();
+    const threshold = getAutoCompactThreshold();
+
+    const totalComp = Math.max(1, m.lastCacheTokens + m.newInTokens + m.outTokens);
+    const wCache = ((m.lastCacheTokens / totalComp) * 100).toFixed(1);
+    const wNewIn = ((m.newInTokens / totalComp) * 100).toFixed(1);
+    const wOut = Math.max(1.5, (m.outTokens / totalComp) * 100).toFixed(1);
+
+    card.innerHTML = `
+      <div class="ag-ctx-card-hdr">
+        <div class="ag-ctx-card-hdr-left">
+          <span class="ag-ctx-card-title">上下文窗口</span>
+          <span class="ag-ctx-comp-toggle" data-ag-act="toggle-comp">${compDrawerOpen ? '⌃' : '⌄'} 构成</span>
+        </div>
+        <span class="ag-ctx-status-badge" data-level="${st.level}">${st.text}</span>
+      </div>
+      <div class="ag-ctx-hero">
+        <div class="ag-ctx-gauge-wrap">
+          ${buildHeroGaugeSvg(m.pctExact, st.color)}
+          <div class="ag-ctx-gauge-center">
+            <span class="ag-ctx-gauge-pct">${pctText}</span>
+            <span class="ag-ctx-gauge-sub">已用</span>
+          </div>
+        </div>
+        <div class="ag-ctx-hero-rows">
+          <div class="ag-ctx-row"><span class="ag-ctx-lbl">已用 Token</span><span class="ag-ctx-val">${formatTokCompactUpper(m.usedTokens)}</span></div>
+          <div class="ag-ctx-row"><span class="ag-ctx-lbl">剩余可用</span><span class="ag-ctx-val">${formatTokCompactUpper(m.remainTokens)}</span></div>
+          <div class="ag-ctx-row"><span class="ag-ctx-lbl">窗口上限</span><span class="ag-ctx-val ag-ctx-limit-click" data-ag-act="cycle-limit" title="点击切换窗口上限基准 (512K / 1M / 256K)">${formatLimitLabel(m.windowLimit)}</span></div>
+        </div>
+      </div>
+      <div class="ag-ctx-comp-drawer" data-open="${compDrawerOpen ? '1' : '0'}">
+        <div class="ag-ctx-comp-bar">
+          <div style="width:${wCache}%;background:#38BDF8"></div>
+          <div style="width:${wNewIn}%;background:#F59E0B"></div>
+          <div style="width:${wOut}%;background:#A855F7"></div>
+        </div>
+        <div class="ag-ctx-comp-grid">
+          <div class="ag-ctx-row"><span class="ag-ctx-lbl"><i class="ag-ctx-dot" style="background:#38BDF8"></i>缓存命中读取</span><span class="ag-ctx-val">${formatTokCompactUpper(m.lastCacheTokens)}</span></div>
+          <div class="ag-ctx-row"><span class="ag-ctx-lbl"><i class="ag-ctx-dot" style="background:#F59E0B"></i>本轮新增输入</span><span class="ag-ctx-val">${formatTokCompactUpper(m.newInTokens)}</span></div>
+          <div class="ag-ctx-row"><span class="ag-ctx-lbl"><i class="ag-ctx-dot" style="background:#A855F7"></i>本步输出 (思考+正文)</span><span class="ag-ctx-val">${formatTokCompactUpper(m.thinkTokens)} + ${formatTokCompactUpper(m.respTokens)}</span></div>
+        </div>
+      </div>
+      <div class="ag-ctx-divider"></div>
+      <div class="ag-ctx-meta-rows">
+        <div class="ag-ctx-row"><span class="ag-ctx-lbl">采样模型</span><span class="ag-ctx-val">${m.modelLabel}</span></div>
+        <div class="ag-ctx-row"><span class="ag-ctx-lbl">生成速率</span><span class="ag-ctx-val">${m.tps > 0 ? `${m.tps.toFixed(1)} t/s · 均 ${m.avgTps}` : '—'}</span></div>
+        <div class="ag-ctx-row"><span class="ag-ctx-lbl">本次缓存</span><span class="ag-ctx-val">${m.hasData ? `${m.lastCachePct}% · ${formatTokCompactUpper(m.lastCacheTokens)}` : '—'}</span></div>
+        <div class="ag-ctx-row"><span class="ag-ctx-lbl">累计缓存</span><span class="ag-ctx-val">${m.hasData ? `${m.sessionCachePct}% · ${m.sessionCacheStr}` : '—'}</span></div>
+      </div>
+      <div class="ag-ctx-actions">
+        <span class="ag-ctx-act-btn" data-ag-act="run-compact" title="立即执行原生 /compact 压缩当前对话">⚡ 立即压缩 (/compact)</span>
+        <span class="ag-ctx-auto-toggle" data-ag-act="toggle-auto" data-on="${enabled ? '1' : '0'}" title="达到 ${threshold}% 时空闲自动执行 /compact">${enabled ? `● ${threshold}%自动:开` : '○ 自动:关'}</span>
+      </div>
+    `;
+  }
+
+  function findComposerRightGroup() {
     const box = document.getElementById('antigravity.agentSidePanelInputBox');
     if (!box) return null;
     const footer =
       box.querySelector('.agy-composer-footer') ||
       box.querySelector('div.flex.w-full.items-center.justify-between');
     if (!footer) return null;
-    return footer.firstElementChild || footer;
+    return footer.lastElementChild || null;
   }
 
   function updateAutoCompactBadge(payload) {
     const isChatPage = window.location.pathname.startsWith('/c/');
-    const pill = document.getElementById('ag-live-metrics-pill');
-    const pillVisible = !!(pill && pill.style.display !== 'none');
-    let btn = document.getElementById('ag-auto-compact-btn');
+    let pill = document.getElementById('ag-ctx-ring-pill');
 
     if (!isChatPage) {
-      if (btn && !pillVisible) btn.style.display = 'none';
+      if (pill) pill.style.display = 'none';
+      hidePopoverNow();
       return;
     }
 
-    const mountTarget = pillVisible ? pill : findComposerFooterLeftGroup();
-    if (!mountTarget) return;
+    const rightGroup = findComposerRightGroup();
+    if (!rightGroup) return;
 
-    if (!btn) {
-      btn = document.createElement('span');
-      btn.id = 'ag-auto-compact-btn';
-    }
-    if (btn.parentElement !== mountTarget) {
-      mountTarget.appendChild(btn);
-    }
-    if (btn.style.display === 'none') {
-      btn.style.display = 'inline-flex';
+    if (!pill) {
+      pill = document.createElement('div');
+      pill.id = 'ag-ctx-ring-pill';
+      pill.addEventListener('mouseenter', () => showPopoverForPill(pill));
+      pill.addEventListener('mouseleave', () => scheduleHidePopover());
+      pill.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const card = document.getElementById('ag-ctx-popover-card');
+        if (card && card.getAttribute('data-visible') === '1') {
+          hidePopoverNow();
+        } else {
+          showPopoverForPill(pill);
+        }
+      });
+      pill.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const nextState = !isAutoCompactEnabled();
+        setAutoCompactEnabled(nextState);
+        updateAutoCompactBadge(window.__ag_last_metrics || null);
+        showCompactToast(
+          nextState
+            ? `✅ 已开启 ${getAutoCompactThreshold()}% 自动压缩上下文守卫`
+            : '⏸️ 已关闭自动压缩守卫',
+          !nextState
+        );
+      });
     }
 
-    btn.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      executeSlashCompact(true);
-    };
-    btn.oncontextmenu = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const nextState = !isAutoCompactEnabled();
-      setAutoCompactEnabled(nextState);
-      updateAutoCompactBadge(window.__ag_last_metrics);
-      showCompactToast(
-        nextState
-          ? `✅ 已开启 ${getAutoCompactThreshold()}% 自动压缩上下文守卫`
-          : '⏸️ 已关闭自动压缩守卫（仍可左键点击手动压缩）',
-        !nextState
-      );
-    };
+    // 精确挂载到「极速模式 (permissions-selector-trigger)」右侧、语音/发送按钮左侧
+    const permBtn = rightGroup.querySelector('[data-testid="permissions-selector-trigger"]');
+    const permWrap = permBtn ? (permBtn.parentElement !== rightGroup ? permBtn.closest('div') : permBtn) : null;
+    if (permWrap && permWrap.parentElement === rightGroup) {
+      if (permWrap.nextSibling !== pill) {
+        rightGroup.insertBefore(pill, permWrap.nextSibling);
+      }
+    } else if (pill.parentElement !== rightGroup) {
+      rightGroup.insertBefore(pill, rightGroup.firstElementChild);
+    }
+
+    if (pill.style.display === 'none') {
+      pill.style.display = 'inline-flex';
+    }
 
     const currentCidMatch = window.location.pathname.match(/\/c\/([0-9a-f-]{36})/i);
     const currentCid = currentCidMatch ? currentCidMatch[1] : '';
     const validPayload = payload && payload.cascadeId === currentCid ? payload : null;
 
+    const rich = extractRichMetrics(validPayload);
+    window.__ag_last_rich_metrics = rich;
+    const st = getGaugeVisualStatus(rich.pctExact);
+    pill.innerHTML = `${buildMiniRingSvg(rich.pctExact, st.color)}<span>${rich.pctInt}%</span>`;
+
+    const openCard = document.getElementById('ag-ctx-popover-card');
+    if (openCard && openCard.getAttribute('data-visible') === '1') {
+      renderPopoverContent(openCard, rich);
+    }
+
     const enabled = isAutoCompactEnabled();
     const threshold = getAutoCompactThreshold();
-    const pct = parseCtxPctFromPayload(validPayload);
-    btn.setAttribute('data-enabled', enabled ? '1' : '0');
-    btn.setAttribute('data-high', pct >= threshold ? '2' : pct >= threshold - 10 ? '1' : '0');
-    btn.textContent = enabled ? `⚡${threshold}%自动` : '⚡自动:关';
-    btn.title = `当前上下文水位：${pct}%（自动压缩阈值：${threshold}%）\n• 左键点击：立即发送 /compact 精简上下文\n• 右键点击：开启 / 关闭 ${threshold}% 自动压缩`;
-
     if (!enabled || !validPayload || !validPayload.hasData || !validPayload.cascadeId) return;
-    if (pct < threshold) return;
+    if (rich.pctExact < threshold) return;
 
     const now = Date.now();
     const lastRecord = compactCooldownMap.get(validPayload.cascadeId);
@@ -1003,8 +1326,8 @@
 
       const latestPayload = window.__ag_last_metrics;
       if (!latestPayload || latestPayload.cascadeId !== validPayload.cascadeId) return;
-      const latestPct = parseCtxPctFromPayload(latestPayload);
-      if (latestPct < getAutoCompactThreshold()) return;
+      const latestRich = extractRichMetrics(latestPayload);
+      if (latestRich.pctExact < getAutoCompactThreshold()) return;
 
       compactCooldownMap.set(validPayload.cascadeId, { ts: Date.now(), sig: latestPayload.sig });
       executeSlashCompact(false);
