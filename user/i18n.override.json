@@ -2673,5 +2673,7 @@
   "Access restricted": "访问受限",
   "Having trouble signing in?": "登录遇到问题？",
   "Use Google Cloud project instead": "改用 Google Cloud 项目关联",
-  "Google Cloud MCP Server Error": "Google Cloud MCP 服务器连接异常"
+  "Google Cloud MCP Server Error": "Google Cloud MCP 服务器连接异常",
+  "Opens the New Conversation screen for this project": "打开此项目的新建对话页面",
+  "Opens the New Conversation screen for this workspace": "打开此工作区的新建对话页面"
 }

@@ -387,6 +387,7 @@
     window.__ag_metrics_route_watcher = null;
   }
   let lastHref = '';
+  let lastWatchedTitleSig = '';
   window.__ag_metrics_route_watcher = setInterval(() => {
     if (document.hidden) return;
     const curHref = window.location.href;
@@ -397,7 +398,27 @@
     const curCid = cidMatch ? cidMatch[1] : '';
     const metricsMismatch = !!(curCid && (!window.__ag_last_metrics || window.__ag_last_metrics.cascadeId !== curCid));
 
-    if (routeChanged || !pill || !btn || metricsMismatch) {
+    // O(1) 检测当前活跃对话标题是否刚由后端异步生成（如从 "新建对话" 变为英文标题），平时已处理对话 0 开销
+    let titleChanged = false;
+    if (curCid && !processedCids.has(curCid)) {
+      const selRow = document.querySelector('[data-testid="conversation-row-sidebar"][data-selected="true"]');
+      const curRowTitle = selRow ? (selRow.querySelector('span.truncate')?.textContent || '').trim() : '';
+      const sig = `${curCid}:${curRowTitle}`;
+      if (sig !== lastWatchedTitleSig) {
+        lastWatchedTitleSig = sig;
+        titleChanged = true;
+      }
+      // 趁新对话首屏可见时提前缓存用户的首条中文提问主题，防止后续对话变长虚拟滚动卸载首条消息
+      if (!firstTopicCache.has(curCid)) {
+        const firstMsgEl = document.querySelector('[data-testid="user-message-content"]');
+        if (firstMsgEl) {
+          const cachedTopic = extractChineseTopic(firstMsgEl.textContent || '');
+          if (cachedTopic) firstTopicCache.set(curCid, cachedTopic);
+        }
+      }
+    }
+
+    if (routeChanged || !pill || !btn || metricsMismatch || titleChanged) {
       lastHref = curHref;
       if (metricsMismatch && typeof window.__agRequestMetrics === 'function') {
         window.__ag_watched_cascade_id = '';
@@ -410,95 +431,164 @@
           updateAutoCompactBadge(window.__ag_last_metrics || null);
         } catch (e) {}
       }
-      if (routeChanged) {
+      if (routeChanged || titleChanged) {
         if (typeof window.requestIdleCallback === 'function') {
-          window.requestIdleCallback(() => autoLocalizeActiveConvTitle(), { timeout: 1500 });
+          window.requestIdleCallback(() => autoLocalizeActiveConvTitle(), { timeout: 1200 });
         } else {
-          setTimeout(autoLocalizeActiveConvTitle, 400);
+          setTimeout(autoLocalizeActiveConvTitle, 350);
         }
       }
     }
   }, 3000);
 
-  // 5. 当新建对话被后端自动生成英文标题时，若用户首条提问包含中文，自动将其重命名为中文标题
+  // 5. 当新建对话（含项目内对话）被后端异步生成英文标题时，若用户提问包含中文，自动重命名为中文标题（兼容 v2.34.0+ 顶栏 segments.onRename 与全局 updateConversationAnnotations）
   const RE_HAS_CJK = /[\u4e00-\u9fa5]/;
+  const RE_MIN_2_CJK = /(?:[\u4e00-\u9fa5].*){2,}/;
   const RE_MIN_3_CJK = /(?:[\u4e00-\u9fa5].*){3,}/;
-  const RE_PURE_EN_TITLE = /^[A-Za-z0-9\s\-_.,:()'"/&+#]+$/;
-  const processedCids = window.__ag_auto_titled_cids_v2 || (window.__ag_auto_titled_cids_v2 = new Set());
+  const RE_PURE_EN_OR_PATH_TITLE = /^(?:[A-Za-z0-9\s\-_.,:()'"/&+#\\]+|"[A-Za-z]:\\[^"]*)$/;
+  const processedCids = window.__ag_auto_titled_cids_v3 || (window.__ag_auto_titled_cids_v3 = new Set());
+  const firstTopicCache = window.__ag_first_topic_cache || (window.__ag_first_topic_cache = new Map());
 
   function extractChineseTopic(rawText) {
     if (!rawText) return '';
-    const cleaned = rawText
+    let cleaned = rawText
       .replace(/https?:\/\/\S+/g, '')
-      .replace(/[`*_#>~]/g, '')
+      .replace(/[`*_#>~"]/g, '')
       .trim();
+
+    // 若用户输入的是本地文件路径（如 D:\真牛奖_找回重建\真牛奖\辩题\赛制介绍121903.mp4），提取路径中有意义的中文词段
+    if (/^[A-Za-z]:[\\/]/.test(cleaned) && RE_HAS_CJK.test(cleaned)) {
+      const parts = cleaned
+        .replace(/^[A-Za-z]:[\\/]+/, '')
+        .replace(/\.[A-Za-z0-9]{1,6}$/, '')
+        .split(/[\\/]+/)
+        .map((p) => p.replace(/\d{5,}$/, '').replace(/_找回重建|_备份|_副本/g, '').trim())
+        .filter((p) => RE_MIN_2_CJK.test(p) && !/^(Users|Administrator|Desktop|Documents|Downloads)$/i.test(p));
+      if (parts.length > 0) {
+        const joined = parts.slice(-2).join('·');
+        return joined.length > 18 ? joined.slice(0, 18) : joined;
+      }
+    }
+
+    cleaned = cleaned.replace(/[A-Za-z]:\\[^\s，。！？；,!?]+/g, ' ').trim();
     const clauses = cleaned
       .split(/[\r\n，。！？；、,!?;]+/)
       .map((s) =>
         s
-          .replace(/^(请问|帮我|请帮我|麻烦帮我|我想|能不能|可以帮我|帮我看一下|帮我看看)/, '')
+          .replace(/^(请问|帮我|请帮我|麻烦帮我|我需要你帮我|我需要你|我想让你|我想|能不能|可以帮我|帮我看一下|帮我看看)/, '')
           .trim()
       )
       .filter((s) => RE_HAS_CJK.test(s));
     if (clauses.length === 0) return '';
     const meaningful = clauses.find((s) => RE_MIN_3_CJK.test(s)) || clauses[0];
-    if (!RE_MIN_3_CJK.test(meaningful)) return '';
+    if (!RE_MIN_2_CJK.test(meaningful)) return '';
     return meaningful.length > 18 ? meaningful.slice(0, 18) : meaningful;
+  }
+
+  function findBreadcrumbOnRename() {
+    try {
+      const header = document.querySelector('.agy-layout-vars');
+      if (!header) return null;
+      const fk = Object.keys(header).find((k) => k.startsWith('__reactFiber'));
+      if (!fk) return null;
+      let foundFn = null;
+      const seen = new WeakSet();
+      function walk(f, d = 0) {
+        if (!f || d > 22 || seen.has(f) || foundFn) return;
+        seen.add(f);
+        const segs = f.memoizedProps?.segments;
+        if (Array.isArray(segs)) {
+          for (let i = segs.length - 1; i >= 0; i--) {
+            if (segs[i] && typeof segs[i].onRename === 'function') {
+              foundFn = segs[i].onRename;
+              return;
+            }
+          }
+        }
+        walk(f.child, d + 1);
+        walk(f.sibling, d + 1);
+      }
+      walk(header[fk], 0);
+      return foundFn;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function findGlobalUpdateAnnotations() {
+    if (typeof window.__ag_cached_update_annotations === 'function') {
+      return window.__ag_cached_update_annotations;
+    }
+    try {
+      const rootEl = document.getElementById('root') || document.body.firstElementChild;
+      const fk = rootEl && Object.keys(rootEl).find((k) => k.startsWith('__reactContainer') || k.startsWith('__reactFiber'));
+      if (!fk) return null;
+      let fn = null;
+      const seen = new WeakSet();
+      function walk(f, d = 0) {
+        if (!f || d > 55 || seen.has(f) || fn) return;
+        seen.add(f);
+        if (typeof f.memoizedProps?.value?.updateConversationAnnotations === 'function') {
+          fn = f.memoizedProps.value.updateConversationAnnotations;
+          return;
+        }
+        walk(f.child, d + 1);
+        walk(f.sibling, d + 1);
+      }
+      walk(rootEl[fk], 0);
+      if (fn) window.__ag_cached_update_annotations = fn;
+      return fn;
+    } catch (e) {
+      return null;
+    }
   }
 
   function autoLocalizeActiveConvTitle() {
     try {
+      const cidMatch = window.location.pathname.match(/\/c\/([0-9a-f-]{36})/i);
       const selectedRow = document.querySelector('[data-testid="conversation-row-sidebar"][data-selected="true"]');
-      if (!selectedRow) return;
-      const cid = selectedRow.getAttribute('data-cascade-id');
+      const cid = selectedRow?.getAttribute('data-cascade-id') || (cidMatch ? cidMatch[1] : '');
       if (!cid || processedCids.has(cid)) return;
 
-      const titleSpan = selectedRow.querySelector('span.truncate');
-      const curTitle = titleSpan ? (titleSpan.textContent || '').trim() : '';
+      const titleSpan = selectedRow ? selectedRow.querySelector('span.truncate') : null;
+      let curTitle = titleSpan ? (titleSpan.textContent || '').trim() : '';
+      if (!curTitle) {
+        // 若侧边栏折叠，从顶栏面包屑读取当前对话标题
+        const header = document.querySelector('.agy-layout-vars');
+        if (header) {
+          const spans = header.querySelectorAll('button, span');
+          if (spans.length > 0) curTitle = (spans[spans.length - 1].textContent || '').trim();
+        }
+      }
       if (!curTitle || curTitle === 'New Conversation' || curTitle === '新建对话') return;
-      if (RE_HAS_CJK.test(curTitle) || !RE_PURE_EN_TITLE.test(curTitle)) return;
+      if (RE_HAS_CJK.test(curTitle) || !RE_PURE_EN_OR_PATH_TITLE.test(curTitle)) {
+        processedCids.add(cid);
+        return;
+      }
 
-      const firstUserMsg = document.querySelector('[data-testid="user-message-content"]');
-      if (!firstUserMsg) return;
-      const zhTopic = extractChineseTopic(firstUserMsg.textContent || '');
+      let zhTopic = firstTopicCache.get(cid) || '';
+      if (!zhTopic) {
+        const userMsgs = document.querySelectorAll('[data-testid="user-message-content"]');
+        for (let i = 0; i < userMsgs.length; i++) {
+          zhTopic = extractChineseTopic(userMsgs[i].textContent || '');
+          if (zhTopic) break;
+        }
+      }
       if (!zhTopic) return;
 
-      const fk = Object.keys(selectedRow).find((k) => k.startsWith('__reactFiber$'));
-      if (!fk) return;
-      let f = selectedRow[fk];
-      while (f && (!f.memoizedProps || !f.memoizedProps.cascadeId || f.memoizedProps.variant !== 'sidebar')) {
-        f = f.return;
-      }
-      if (!f) return;
-
-      let renameFn = null;
-      let s = f.memoizedState;
-      while (s) {
-        const ms = s.memoizedState;
-        const fn =
-          typeof ms === 'function'
-            ? ms
-            : Array.isArray(ms) && typeof ms[0] === 'function'
-              ? ms[0]
-              : null;
-        if (fn) {
-          const src = fn.toString();
-          if (
-            src.includes('rename-conversation-error') ||
-            src.includes('CONVERSATION_RENAME_FAILED') ||
-            src.includes('annotations:{title:') ||
-            src.includes('updateOptimisticSummary')
-          ) {
-            renameFn = fn;
-            break;
-          }
-        }
-        s = s.next;
-      }
-
-      if (renameFn) {
+      const onRename = findBreadcrumbOnRename();
+      if (onRename) {
         processedCids.add(cid);
-        Promise.resolve(renameFn(zhTopic)).catch(() => {
+        Promise.resolve(onRename(zhTopic)).catch(() => {
+          processedCids.delete(cid);
+        });
+        return;
+      }
+
+      const updateAnnotations = findGlobalUpdateAnnotations();
+      if (updateAnnotations) {
+        processedCids.add(cid);
+        Promise.resolve(updateAnnotations([cid], { title: zhTopic }, true)).catch(() => {
           processedCids.delete(cid);
         });
       }
