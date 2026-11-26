@@ -168,8 +168,10 @@
   const RE_QUOTA_RESETS = /^(?:(Daily limit|Weekly limit|\d+[smhd]\s+limit),\s*)?[Rr]esets in\s+(.+)$/;
   const RE_MODELS_IN_GROUP = /^Models within this group:\s*(.+)$/;
   const RE_AVAIL_CREDITS = /^Available AI Credits:\s*(.+)$/;
-  const RE_EFFORT_CTX = /^(Low|Medium|High|Extra High|Extra|Max)(\s*·\s*.+)$/;
-  const EFFORT_ZH_MAP = { Low: '低', Medium: '中', High: '高', 'Extra High': '超高', Extra: '超高', Max: '极高' };
+  const RE_EFFORT_CTX = /^(Low|Medium|High|Extra High|XHigh|Extra|Max)(\s*·\s*.+)$/;
+  const RE_MODEL_EFFORT_SUFFIX = /^((?:Gemini|Claude|GPT|Orchestrator)\s+.+?)\s+(Low|Medium|High|Extra High|XHigh|Extra|Max)$/;
+  const RE_MODEL_PAREN_EFFORT = /^((?:Gemini|Claude|GPT)\s+.+?)\s*\((Low|Medium|High|Extra High|XHigh|Extra|Max)\)$/;
+  const EFFORT_ZH_MAP = { Low: '低', Medium: '中', High: '高', 'Extra High': '超高', XHigh: '超高', Extra: '超高', Max: '极高' };
   const UNIT_ZH_MAP = { s: '秒', m: '分钟', h: '小时', d: '天' };
   const DISCLAIMER_ZH =
     'Google 不控制第三方开发者工具的可用性或功能。您通过连接到 Antigravity 实例的第三方开发者工具产生的数据可能会与 Google 共享。Google 将严格按照《Google 隐私权政策》保护此类数据，详情请参阅： ';
@@ -245,6 +247,14 @@
     const mEff = s.match(RE_EFFORT_CTX);
     if (mEff && EFFORT_ZH_MAP[mEff[1]]) {
       return raw.replace(s, EFFORT_ZH_MAP[mEff[1]] + mEff[2]);
+    }
+    const mModelEff = s.match(RE_MODEL_EFFORT_SUFFIX);
+    if (mModelEff && EFFORT_ZH_MAP[mModelEff[2]]) {
+      return raw.replace(s, `${mModelEff[1]} ${EFFORT_ZH_MAP[mModelEff[2]]}`);
+    }
+    const mParenEff = s.match(RE_MODEL_PAREN_EFFORT);
+    if (mParenEff && EFFORT_ZH_MAP[mParenEff[2]]) {
+      return raw.replace(s, `${mParenEff[1]}（${EFFORT_ZH_MAP[mParenEff[2]]}）`);
     }
     if (RE_GREET_GOOD.test(s)) return raw.replace(RE_GREET_GOOD, '很高兴见到您，$1。接下来做点什么？');
     if (RE_GREET_WELCOME.test(s)) return raw.replace(RE_GREET_WELCOME, '欢迎回来，$1。我们接着做哪部分？');

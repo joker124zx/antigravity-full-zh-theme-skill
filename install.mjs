@@ -579,8 +579,7 @@ WantedBy=default.target
     try {
       // 使用 UTF-16LE (带 BOM) 写入 VBS，彻底兼容 Windows 中文用户名路径 (wscript.exe 原生支持 UTF-16LE)
       fs.writeFileSync(localVbsFile, vbsContent, 'utf16le');
-      fs.mkdirSync(startupDir, { recursive: true });
-      fs.writeFileSync(vbsFile, vbsContent, 'utf16le');
+      if (fs.existsSync(vbsFile)) fs.unlinkSync(vbsFile);
     } catch {}
     try {
       spawnSync(
@@ -698,6 +697,11 @@ async function runInstall() {
       const d = path.join(targetDir, docFile);
       if (fs.existsSync(s)) fs.copyFileSync(s, d);
     }
+
+    const srcScripts = path.join(__dirname, 'scripts');
+    if (fs.existsSync(srcScripts)) {
+      copyDirRecursive(srcScripts, path.join(targetDir, 'scripts'));
+    }
   }
 
   // 更新 user/config.json（仅在显式传入 CLI 参数或首次初始化时更新对应字段，保留用户自定义）
@@ -721,19 +725,29 @@ async function runInstall() {
   // 自动检查并修补 ~/.antigravity/argv.json (remote-debugging-port)
   const argvStatus = ensureArgvRemoteDebugging(currentCfg.channel);
 
-  // 创建兼容包装脚本 ~/.gemini/antigravity/scripts/antigravity-font-daemon.mjs（使用 pathToFileURL 兼容 Windows C:\ 路径）
+  // 部署智能代理启动器与自愈包装守护脚本 ~/.gemini/antigravity/scripts/
   const scriptsDir = path.join(os.homedir(), '.gemini', 'antigravity', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
+  const bundledLauncher = path.join(__dirname, 'scripts', 'launch_antigravity_auto.ps1');
+  const bundledSelfHealDaemon = path.join(__dirname, 'scripts', 'antigravity-font-daemon.mjs');
+  if (process.platform === 'win32' && fs.existsSync(bundledLauncher)) {
+    const destLauncher = path.join(scriptsDir, 'launch_antigravity_auto.ps1');
+    if (!fs.existsSync(destLauncher)) fs.copyFileSync(bundledLauncher, destLauncher);
+  }
   const wrapperDaemon = path.join(scriptsDir, 'antigravity-font-daemon.mjs');
   const realDaemon = path.join(targetCore, 'daemon.mjs');
   const realDaemonUrl = pathToFileURL(realDaemon).href;
-  const existingWrapper = fs.existsSync(wrapperDaemon) ? fs.readFileSync(wrapperDaemon, 'utf8') : '';
-  if (!existingWrapper.includes('[SelfHeal]')) {
-    fs.writeFileSync(
-      wrapperDaemon,
-      `#!/usr/bin/env node\n// Auto-generated wrapper -> ${realDaemon}\nprocess.on('uncaughtException', (err) => { try { console.error('[Daemon] uncaughtException:', err?.message || err); } catch {} });\nprocess.on('unhandledRejection', (err) => { try { console.error('[Daemon] unhandledRejection:', err?.message || err); } catch {} });\nawait import(${JSON.stringify(realDaemonUrl)});\n`,
-      { encoding: 'utf8', mode: 0o755 }
-    );
+  if (process.platform === 'win32' && fs.existsSync(bundledSelfHealDaemon)) {
+    fs.copyFileSync(bundledSelfHealDaemon, wrapperDaemon);
+  } else {
+    const existingWrapper = fs.existsSync(wrapperDaemon) ? fs.readFileSync(wrapperDaemon, 'utf8') : '';
+    if (!existingWrapper.includes('[SelfHeal]')) {
+      fs.writeFileSync(
+        wrapperDaemon,
+        `#!/usr/bin/env node\n// Auto-generated wrapper -> ${realDaemon}\nprocess.on('uncaughtException', (err) => { try { console.error('[Daemon] uncaughtException:', err?.message || err); } catch {} });\nprocess.on('unhandledRejection', (err) => { try { console.error('[Daemon] unhandledRejection:', err?.message || err); } catch {} });\nawait import(${JSON.stringify(realDaemonUrl)});\n`,
+        { encoding: 'utf8', mode: 0o755 }
+      );
+    }
   }
 
   // 注册/更新跨平台自启服务

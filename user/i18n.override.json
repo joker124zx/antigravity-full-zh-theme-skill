@@ -2120,7 +2120,7 @@
   "GPT-OSS will be removed from Antigravity on November 18, 2026.": "GPT-OSS 将于 2026 年 11 月 18 日从 Antigravity 下线移除。",
   "Best of N Models": "多模型对比优选 (Best of N)",
   "No models available": "暂无可用模型",
-  "Custom models are only supported on Linux machines.": "自定义模型目前仅支持在 Linux 设备上使用。",
+  "Custom models are only supported on Linux machines.": "自定义模型目前仅支持 Linux 设备。",
   "No quota information available.": "暂无可用额度信息。",
   "% left": "% 剩余",
   "Daily limit": "每日限额",
@@ -2941,5 +2941,10 @@
   "Not started": "未开始",
   "Planned next": "下一步计划",
   "Waiting on @coordinator": "等待 @coordinator 响应",
-  "Upload": "上传"
+  "Upload": "上传",
+  "Offloads routine steps to a faster executor. Same quality, fewer tokens used.": "将常规步骤分流给更快的执行器处理。保持同等质量，消耗更少 Token。",
+  "Leaving Soon": "即将下线",
+  "Use Hydrogen for better quality with lower quota usage. Leaving on Nov 30.": "建议改用 Hydrogen，质量更佳且配额消耗更低。将于 11 月 30 日下线。",
+  "The original Gemini 4 model for advanced workflows. Leaving on Nov 30.": "面向高阶工作流的初代 Gemini 4 模型。将于 11 月 30 日下线。",
+  "GPT-OSS 120B (Medium)": "GPT-OSS 120B（中）"
 }
