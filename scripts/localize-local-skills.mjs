@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Localize Built-in / Installed SKILL.md & plugin.json descriptions
+ * Localize Built-in / Installed SKILL.md, plugin.json & sidecar.json descriptions/titles
  * into Simplified Chinese using user/i18n.override.json dictionary mappings.
- * Supports both single-line YAML `description: ...` and folded `description: >-` blocks.
+ * Supports folded (`description: >-`), plain multiline (`description: text\n  cont`), and single-line YAML.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,7 +31,7 @@ export function localizeAllLocalSkills(customOverridePath = overridePath, quiet 
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(full, out);
-      else if (entry.name === 'SKILL.md' || entry.name === 'plugin.json') out.push(full);
+      else if (entry.name === 'SKILL.md' || entry.name === 'plugin.json' || entry.name === 'sidecar.json') out.push(full);
     }
     return out;
   }
@@ -49,12 +49,58 @@ export function localizeAllLocalSkills(customOverridePath = overridePath, quiet 
       if (file.endsWith('plugin.json')) {
         try {
           const obj = JSON.parse(raw);
-          if (obj.description && dict[obj.description]) {
-            if (!fs.existsSync(file + '.bak')) fs.writeFileSync(file + '.bak', raw, 'utf8');
+          let changed = false;
+          if (obj.description && dict[obj.description] && obj.description !== dict[obj.description]) {
             obj.description = dict[obj.description];
+            changed = true;
+          }
+          if (Array.isArray(obj.suggestedPrompts)) {
+            for (let i = 0; i < obj.suggestedPrompts.length; i++) {
+              const sp = obj.suggestedPrompts[i];
+              if (typeof sp === 'string' && dict[sp] && sp !== dict[sp]) {
+                obj.suggestedPrompts[i] = dict[sp];
+                changed = true;
+              }
+            }
+          }
+          if (changed) {
+            if (!fs.existsSync(file + '.bak')) fs.writeFileSync(file + '.bak', raw, 'utf8');
             fs.writeFileSync(file, JSON.stringify(obj, null, 2) + '\n', 'utf8');
             updatedCount++;
             if (!quiet) console.log('[+] Localized plugin.json:', file);
+          }
+        } catch {}
+      } else if (file.endsWith('sidecar.json')) {
+        try {
+          const obj = JSON.parse(raw);
+          let changed = false;
+          if (obj.display_name && dict[obj.display_name] && obj.display_name !== dict[obj.display_name]) {
+            obj.display_name = dict[obj.display_name];
+            changed = true;
+          }
+          if (obj.description && dict[obj.description] && obj.description !== dict[obj.description]) {
+            obj.description = dict[obj.description];
+            changed = true;
+          }
+          if (obj.ui_config && typeof obj.ui_config === 'object') {
+            if (obj.ui_config.display_name && dict[obj.ui_config.display_name] && obj.ui_config.display_name !== dict[obj.ui_config.display_name]) {
+              obj.ui_config.display_name = dict[obj.ui_config.display_name];
+              changed = true;
+            }
+            if (Array.isArray(obj.ui_config.views)) {
+              for (const v of obj.ui_config.views) {
+                if (v && v.title && dict[v.title] && v.title !== dict[v.title]) {
+                  v.title = dict[v.title];
+                  changed = true;
+                }
+              }
+            }
+          }
+          if (changed) {
+            if (!fs.existsSync(file + '.bak')) fs.writeFileSync(file + '.bak', raw, 'utf8');
+            fs.writeFileSync(file, JSON.stringify(obj, null, 2) + '\n', 'utf8');
+            updatedCount++;
+            if (!quiet) console.log('[+] Localized sidecar.json:', file);
           }
         } catch {}
       } else if (file.endsWith('SKILL.md')) {
@@ -65,7 +111,7 @@ export function localizeAllLocalSkills(customOverridePath = overridePath, quiet 
 
         let changed = false;
 
-        // Case 1: Folded / multiline description (`description: >-` or `description: |` or wrapped indented lines)
+        // Case 1: Folded / block description (`description: >-` or `description: |`)
         const foldedRe = /^description:\s*(?:>[-+]?|\|[-+]?)?\s*\r?\n((?:[ \t]+.+\r?\n?)+)/m;
         const fmMatch = fmBody.match(foldedRe);
         if (fmMatch) {
@@ -80,7 +126,26 @@ export function localizeAllLocalSkills(customOverridePath = overridePath, quiet 
           }
         }
 
-        // Case 2: Single-line description (`description: ...`)
+        // Case 2: Plain multiline scalar (`description: first line\n  indented continuation...`)
+        if (!changed) {
+          const plainMultiRe = /^description:\s*([^\r\n>|][^\r\n]*)\r?\n((?:[ \t]+.+\r?\n?)+)/m;
+          const pmMatch = fmBody.match(plainMultiRe);
+          if (pmMatch) {
+            const firstLine = pmMatch[1].trim();
+            const restLines = pmMatch[2]
+              .split(/\r?\n/)
+              .map(l => l.trim())
+              .filter(Boolean);
+            const joined = [firstLine, ...restLines].join(' ');
+            if (dict[joined]) {
+              const hasTrailingNl = /\r?\n$/.test(pmMatch[0]);
+              fmBody = fmBody.replace(pmMatch[0], `description: ${JSON.stringify(dict[joined])}${hasTrailingNl ? '\n' : ''}`);
+              changed = true;
+            }
+          }
+        }
+
+        // Case 3: Single-line description (`description: ...`)
         if (!changed) {
           const singleRe = /^description:\s*(.+)$/m;
           const sm = fmBody.match(singleRe);
@@ -107,7 +172,7 @@ export function localizeAllLocalSkills(customOverridePath = overridePath, quiet 
     }
   }
 
-  if (!quiet) console.log(`[✓] Done. Updated ${updatedCount} local skill/plugin manifest files.`);
+  if (!quiet) console.log(`[✓] Done. Updated ${updatedCount} local skill/plugin/sidecar manifest files.`);
   return updatedCount;
 }
 

@@ -133,12 +133,31 @@
   // 4. 增量汉化外框、设置弹窗、插件市场与首页动态文本（严禁全屏扫描 document.body，仅增量处理脏节点）
   const EXCLUDE_CHROME_SEL =
     '[data-testid="autoscroll-viewport"], [contenteditable="true"], .monaco-editor, .xterm, pre, code, svg, #ag-live-metrics-pill, #ag-live-metrics-tooltip, #ag-ctx-ring-pill, #ag-ctx-popover-card, [data-testid="conversation-row-sidebar"] a[href^="/c/"]';
+  const STEP_PILL_ALLOW_SEL =
+    '[data-testid="step-plan-chip"], [data-testid="step-plan"], [data-testid="load-more-status-pill"], [data-testid*="load-older"], [data-testid="browser-subagent-step"], h6.sr-only, h5.sr-only';
+
+  function isExcludedFromDynI18n(el) {
+    if (!el || !el.closest) return true;
+    const hit = el.closest(EXCLUDE_CHROME_SEL);
+    if (!hit) return false;
+    if (hit.getAttribute && hit.getAttribute('data-testid') === 'autoscroll-viewport') {
+      return !el.closest(STEP_PILL_ALLOW_SEL);
+    }
+    return true;
+  }
 
   const RE_UPDATED_AT = /^Updated\s+(.+)$/;
   const RE_MODIFIED_IN = /^Modified in\s+(.+)$/;
   const RE_N_PROJECTS = /^(\d+)\s+projects?$/i;
   const RE_N_MODELS_SELECTED = /^(\d+)\s+models\s+selected$/i;
   const RE_SEE_N_MORE = /^See\s+(\d+)\s+more(?:\s+.*)?$/i;
+  const RE_STEP_CHIP = /^(\d+\/\d+)\s+steps?(?:\s*·\s*(.+))?$/i;
+  const RE_SHOW_EARLIER_STEPS = /^Show\s+(\d+)\s+earlier\s+steps?$/i;
+  const RE_NO_MSG_STEPS = /^No messages in last\s+(\d+)\s+steps?\s*(?:—|·|,)\s*(load older|Load more)$/i;
+  const RE_LOAD_OLDER_COUNT = /^Load older messages,\s*showing\s+(\d+)\s+of\s+(\d+)$/i;
+  const RE_PLAN_DONE_ARIA = /^Plan,\s*(\d+)\s+of\s+(\d+)\s+steps?\s+done$/i;
+  const RE_STEP_CHIP_ARIA = /^(.+?)\.\s*(Show|Hide)\s+plan$/i;
+  const RE_TURN_ARIA = /^Turn\s+(\d+)\s+of\s+(\d+)$/i;
   const RE_GREET_HEY = /^Hey\s+(.+?),\s*what should we build today\?$/i;
   const RE_GREET_WELCOME = /^Welcome back,\s*(.+?)\.\s*Where should we pick up\?$/i;
   const RE_GREET_GOOD = /^Good to see you,\s*(.+?)\.\s*What['’]s next\?$/i;
@@ -179,11 +198,28 @@
     return p;
   }
 
+  function formatStepChipZh(s) {
+    const m = s.match(RE_STEP_CHIP);
+    if (!m) return null;
+    let out = `${m[1]} 步`;
+    if (m[2]) {
+      const extra = m[2]
+        .replace(/(\d+)\s+failed/gi, '$1 失败')
+        .replace(/(\d+)\s+skipped/gi, '$1 跳过');
+      out += ` · ${extra}`;
+    }
+    return out;
+  }
+
   function translateDynamicString(raw, dict) {
     if (!raw || raw.length > 420) return null;
     const s = raw.trim();
     if (!s || !/[A-Za-z]/.test(s)) return null;
     if (dict[s]) return raw.replace(s, dict[s]);
+    const stepZh = formatStepChipZh(s);
+    if (stepZh) return raw.replace(s, stepZh);
+    if (RE_SHOW_EARLIER_STEPS.test(s)) return raw.replace(RE_SHOW_EARLIER_STEPS, '展开前 $1 步');
+    if (RE_NO_MSG_STEPS.test(s)) return raw.replace(RE_NO_MSG_STEPS, '最近 $1 步无消息 · 加载更早记录');
     if (RE_SEE_N_MORE.test(s)) return raw.replace(RE_SEE_N_MORE, '展开其余 $1 项');
     if (RE_UPDATED_AT.test(s)) return raw.replace(RE_UPDATED_AT, '更新于 $1');
     if (RE_MODIFIED_IN.test(s)) return raw.replace(RE_MODIFIED_IN, '修改自项目：$1');
@@ -230,16 +266,43 @@
       let next = null;
       if (dict[trimmed]) {
         next = dict[trimmed];
+      } else if (RE_STEP_CHIP_ARIA.test(trimmed)) {
+        const m = trimmed.match(RE_STEP_CHIP_ARIA);
+        const headZh = formatStepChipZh(m[1].trim()) || m[1].trim();
+        next = `${headZh} · ${/^hide$/i.test(m[2]) ? '隐藏计划' : '显示计划'}`;
+      } else if (RE_PLAN_DONE_ARIA.test(trimmed)) {
+        next = trimmed.replace(RE_PLAN_DONE_ARIA, '计划：已完成 $1/$2 步');
+      } else if (RE_LOAD_OLDER_COUNT.test(trimmed)) {
+        next = trimmed.replace(RE_LOAD_OLDER_COUNT, '加载更早的消息（当前显示 $1 / $2 条）');
+      } else if (RE_NO_MSG_STEPS.test(trimmed)) {
+        next = trimmed.replace(RE_NO_MSG_STEPS, '最近 $1 步无消息 · 加载更早记录');
+      } else if (RE_TURN_ARIA.test(trimmed)) {
+        next = trimmed.replace(RE_TURN_ARIA, '第 $1 / $2 轮对话');
       } else if (RE_SEE_N_MORE.test(trimmed)) {
         next = trimmed.replace(RE_SEE_N_MORE, '展开其余 $1 项');
       } else if (trimmed.startsWith('Select model, current: ')) {
         let curModelStr = trimmed.slice(23).trim();
+        let suffixZh = '';
+        const dotIdx = curModelStr.indexOf('. Applies to /btw and messages sent after this turn');
+        if (dotIdx !== -1) {
+          curModelStr = curModelStr.slice(0, dotIdx).trim();
+          suffixZh = '（适用于 /btw 及本轮之后发送的消息）';
+        }
         if (dict[curModelStr]) {
           curModelStr = dict[curModelStr];
         } else {
           curModelStr = curModelStr.replace(/\b(Extra High|Low|Medium|High|Extra|Max)\b$/, (m) => EFFORT_ZH_MAP[m] || m);
         }
-        next = '选择模型（当前：' + curModelStr + '）';
+        next = '选择模型（当前：' + curModelStr + '）' + suffixZh;
+      } else if (trimmed.startsWith('Agent permissions preset: ')) {
+        next = trimmed
+          .replace(/^Agent permissions preset:\s*/i, '智能体权限预设：')
+          .replace(/\bTurbo\b/g, '极速')
+          .replace(/\bAuto\b/g, '自动')
+          .replace(/\bSupervised\b/g, '受控')
+          .replace(/,\s*Permissions cannot be changed while the agent is running$/i, '（智能体运行期间无法更改权限）');
+      } else if (trimmed.startsWith('Project: ')) {
+        next = '项目：' + trimmed.slice(9);
       } else if (trimmed.startsWith('Close ')) {
         next = '关闭 ' + trimmed.slice(6).replace(RE_TODAY_TIME, '（今天 $1）');
       }
@@ -257,7 +320,7 @@
       // 单文本节点 O(1) 极速路径
       if (rootNode.nodeType === 3) {
         const p = rootNode.parentElement;
-        if (!p || p.closest(EXCLUDE_CHROME_SEL)) return;
+        if (!p || isExcludedFromDynI18n(p)) return;
         const next = translateDynamicString(rootNode.nodeValue, dict);
         if (next && next !== rootNode.nodeValue) {
           rootNode.nodeValue = next;
@@ -266,9 +329,10 @@
       }
 
       if (rootNode.nodeType !== 1) return;
-      if (rootNode.closest && rootNode.closest(EXCLUDE_CHROME_SEL)) return;
+      const isRootBody = rootNode === document.body;
+      if (!isRootBody && isExcludedFromDynI18n(rootNode)) return;
 
-      if (rootNode.matches && rootNode.matches('button[aria-label], button[title], input[placeholder]')) {
+      if (rootNode.matches && rootNode.matches('[aria-label], [title], input[placeholder]')) {
         localizeElementButtonAttrs(rootNode, dict);
       }
 
@@ -283,7 +347,7 @@
             if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'CODE' || tag === 'PRE' || tag === 'TEXTAREA' || tag === 'SVG') {
               return NodeFilter.FILTER_REJECT;
             }
-            if (p.closest(EXCLUDE_CHROME_SEL)) {
+            if (isExcludedFromDynI18n(p)) {
               return NodeFilter.FILTER_REJECT;
             }
             return NodeFilter.FILTER_ACCEPT;
@@ -300,11 +364,11 @@
       }
 
       const attrEls = rootNode.querySelectorAll
-        ? rootNode.querySelectorAll('button[aria-label], button[title], input[placeholder]')
+        ? rootNode.querySelectorAll('button[aria-label], button[title], input[placeholder], [data-testid="step-plan"], nav[aria-label], section[aria-label], div[aria-label="Sidecar View"]')
         : [];
       for (let j = 0; j < attrEls.length; j++) {
         const el = attrEls[j];
-        if (el.closest(EXCLUDE_CHROME_SEL)) continue;
+        if (isExcludedFromDynI18n(el)) continue;
         localizeElementButtonAttrs(el, dict);
       }
     } catch (e) {}
@@ -350,12 +414,26 @@
       const m = mutations[i];
       if (m.type === 'characterData') {
         const t = m.target;
-        if (t && t.parentElement && !t.parentElement.closest(EXCLUDE_CHROME_SEL)) {
+        if (t && t.parentElement && !isExcludedFromDynI18n(t.parentElement)) {
           dynDirtyNodes.add(t);
         }
       } else if (m.type === 'childList' && m.addedNodes.length > 0) {
         const targetEl = m.target && m.target.nodeType === 1 ? m.target : null;
-        if (targetEl && targetEl.closest(EXCLUDE_CHROME_SEL)) continue;
+        if (targetEl && isExcludedFromDynI18n(targetEl)) {
+          // 若新增节点内部包含步骤胶囊或加载胶囊，仅精准入队该小胶囊
+          for (let j = 0; j < m.addedNodes.length; j++) {
+            const n = m.addedNodes[j];
+            if (n.nodeType === 1) {
+              if (n.matches && n.matches(STEP_PILL_ALLOW_SEL)) {
+                dynDirtyNodes.add(n);
+              } else if (n.querySelectorAll) {
+                const pills = n.querySelectorAll(STEP_PILL_ALLOW_SEL);
+                for (let k = 0; k < pills.length; k++) dynDirtyNodes.add(pills[k]);
+              }
+            }
+          }
+          continue;
+        }
         for (let j = 0; j < m.addedNodes.length; j++) {
           const n = m.addedNodes[j];
           if (n.nodeType === 1 || n.nodeType === 3) {
